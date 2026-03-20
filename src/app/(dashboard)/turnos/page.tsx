@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/components/AuthProvider'
 import {
@@ -26,10 +26,9 @@ const ESTADO_STYLES: Record<string, { bg: string; text: string; label: string }>
   cancelado: { bg: 'bg-amber-light', text: 'text-amber', label: 'Cancelado' },
 }
 
-const supabase = createClient()
-
 export default function TurnosPage() {
   const { user } = useAuth()
+  const supabase = useMemo(() => createClient(), [])
   const [turnos, setTurnos] = useState<TurnoConSede[]>([])
   const [sedes, setSedes] = useState<Sede[]>([])
   const [loading, setLoading] = useState(true)

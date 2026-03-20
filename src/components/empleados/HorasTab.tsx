@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { createHorasClient } from '@/lib/supabase/horas-client'
 import {
   ChevronLeft,
@@ -93,9 +93,8 @@ function getWeeksInMonth(y: number, m: number) { return Math.ceil((getFirstDayOf
 
 function formatMoney(n: number) { return '$' + Math.round(n).toLocaleString('es-AR') }
 
-const supabase = createHorasClient()
-
 export default function HorasTab() {
+  const supabase = useMemo(() => createHorasClient(), [])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [hours, setHours] = useState<HourEntry[]>([])
   const [approvals, setApprovals] = useState<WeeklyApproval[]>([])

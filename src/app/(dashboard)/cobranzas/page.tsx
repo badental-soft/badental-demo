@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/components/AuthProvider'
 import {
@@ -28,7 +28,7 @@ const TIPO_PAGO_LABELS: Record<string, { label: string; icon: React.ReactNode; b
 
 export default function CobranzasPage() {
   const { user } = useAuth()
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const [cobranzas, setCobranzas] = useState<CobranzaConSede[]>([])
   const [sedes, setSedes] = useState<Sede[]>([])
   const [loading, setLoading] = useState(true)
@@ -52,7 +52,8 @@ export default function CobranzasPage() {
   const fetchSedes = useCallback(async () => {
     const { data } = await supabase.from('sedes').select('*').eq('activa', true).order('nombre')
     if (data) setSedes(data)
-  }, [supabase])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const fetchCobranzas = useCallback(async () => {
     setLoading(true)
@@ -73,7 +74,7 @@ export default function CobranzasPage() {
     const { data } = await query
     setCobranzas((data as CobranzaConSede[]) || [])
     setLoading(false)
-  }, [supabase, fecha, sedeFilter, user])
+  }, [fecha, sedeFilter, user])
 
   useEffect(() => { fetchSedes() }, [fetchSedes])
   useEffect(() => { fetchCobranzas() }, [fetchCobranzas])
