@@ -113,35 +113,39 @@ export default function HorasTab() {
   const fetchAll = useCallback(async () => {
     setLoading(true)
 
-    const [empRes, configRes, hoursRes, approvalsRes, paymentsRes] = await Promise.all([
-      supabase.from('employees').select('*').eq('active', true).order('name'),
-      supabase.from('config').select('*'),
-      supabase.from('hour_entries').select('*')
-        .gte('date', `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-01`)
-        .lte('date', `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${getMonthDays(currentYear, currentMonth)}`),
-      supabase.from('weekly_approvals').select('*')
-        .eq('year', currentYear).eq('month', currentMonth),
-      supabase.from('payment_records').select('*')
-        .eq('year', currentYear).eq('month', currentMonth),
-    ])
+    try {
+      const [empRes, configRes, hoursRes, approvalsRes, paymentsRes] = await Promise.all([
+        supabase.from('employees').select('*').eq('active', true).order('name'),
+        supabase.from('config').select('*'),
+        supabase.from('hour_entries').select('*')
+          .gte('date', `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-01`)
+          .lte('date', `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${getMonthDays(currentYear, currentMonth)}`),
+        supabase.from('weekly_approvals').select('*')
+          .eq('year', currentYear).eq('month', currentMonth),
+        supabase.from('payment_records').select('*')
+          .eq('year', currentYear).eq('month', currentMonth),
+      ])
 
-    if (empRes.data) {
-      setEmployees(empRes.data)
-      if (!selectedEmployee && empRes.data.length > 0) {
-        setSelectedEmployee(empRes.data[0].id)
+      if (empRes.data) {
+        setEmployees(empRes.data)
+        if (empRes.data.length > 0) {
+          setSelectedEmployee(prev => prev ?? empRes.data[0].id)
+        }
       }
+      if (configRes.data) {
+        const cfg: Record<string, string> = {}
+        configRes.data.forEach((c: { key: string; value: string }) => { cfg[c.key] = c.value })
+        setConfig({ hourly_rate: cfg.hourly_rate || '0', sunday_multiplier: cfg.sunday_multiplier || '2' })
+      }
+      if (hoursRes.data) setHours(hoursRes.data)
+      if (approvalsRes.data) setApprovals(approvalsRes.data)
+      if (paymentsRes.data) setPayments(paymentsRes.data)
+    } catch (err) {
+      console.error('Error fetching horas data:', err)
     }
-    if (configRes.data) {
-      const cfg: Record<string, string> = {}
-      configRes.data.forEach((c: { key: string; value: string }) => { cfg[c.key] = c.value })
-      setConfig({ hourly_rate: cfg.hourly_rate || '0', sunday_multiplier: cfg.sunday_multiplier || '2' })
-    }
-    if (hoursRes.data) setHours(hoursRes.data)
-    if (approvalsRes.data) setApprovals(approvalsRes.data)
-    if (paymentsRes.data) setPayments(paymentsRes.data)
 
     setLoading(false)
-  }, [supabase, currentYear, currentMonth, selectedEmployee])
+  }, [supabase, currentYear, currentMonth])
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
