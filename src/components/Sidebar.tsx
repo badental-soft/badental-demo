@@ -5,12 +5,8 @@ import { usePathname } from 'next/navigation'
 import { useAuth } from './AuthProvider'
 import {
   LayoutDashboard,
-  DollarSign,
-  Clock,
   CalendarDays,
-  CheckSquare,
-  Timer,
-  Receipt,
+  Wallet,
   Package,
   Users,
   LogOut,
@@ -28,14 +24,10 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard', icon: <LayoutDashboard size={20} />, roles: ['admin'] },
-  { label: 'Cobranzas', href: '/cobranzas', icon: <DollarSign size={20} />, roles: ['admin', 'rolC'] },
-  { label: 'Por Cobrar', href: '/por-cobrar', icon: <Clock size={20} />, roles: ['admin', 'rolC'] },
   { label: 'Turnos', href: '/turnos', icon: <CalendarDays size={20} />, roles: ['admin', 'rolA', 'rolC'] },
-  { label: 'Tareas', href: '/tareas', icon: <CheckSquare size={20} />, roles: ['admin', 'rolA', 'rolB', 'rolC'] },
-  { label: 'Horas', href: '/horas', icon: <Timer size={20} />, roles: ['admin', 'rolA', 'rolB', 'rolC'] },
-  { label: 'Gastos', href: '/gastos', icon: <Receipt size={20} />, roles: ['admin'] },
+  { label: 'Finanzas', href: '/finanzas', icon: <Wallet size={20} />, roles: ['admin', 'rolC'] },
   { label: 'Stock', href: '/stock', icon: <Package size={20} />, roles: ['admin', 'rolC'] },
-  { label: 'Empleados', href: '/empleados', icon: <Users size={20} />, roles: ['admin'] },
+  { label: 'Empleados', href: '/empleados', icon: <Users size={20} />, roles: ['admin', 'rolA', 'rolB', 'rolC'] },
 ]
 
 export default function Sidebar() {
@@ -102,7 +94,7 @@ export default function Sidebar() {
         <nav className="flex-1 overflow-y-auto py-3 px-2">
           <div className="space-y-0.5">
             {filteredItems.map((item) => {
-              const isActive = pathname === item.href
+              const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
               return (
                 <Link
                   key={item.href}
