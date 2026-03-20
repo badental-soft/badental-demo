@@ -26,7 +26,7 @@ export function AuthProvider({ children, initialUser }: { children: React.ReactN
   const supabase = createClient()
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: string) => {
       if (event === 'SIGNED_OUT') {
         setUser(null)
       } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {

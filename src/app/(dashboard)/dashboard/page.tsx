@@ -103,7 +103,7 @@ export default function DashboardPage() {
     if (sedesRes.data) setSedes(sedesRes.data)
 
     // Process turnos
-    const turnosHoy = turnosRes.data
+    const turnosHoy = turnosRes.data as { estado: string }[] | null
     if (turnosHoy) {
       const total = turnosHoy.length
       const atendidos = turnosHoy.filter(t => t.estado === 'atendido').length
@@ -129,21 +129,26 @@ export default function DashboardPage() {
     }
 
     // Process cobranzas
+    const cobHoyData = cobHoyRes.data as { monto: number }[] | null
+    const cobSemData = cobSemRes.data as { monto: number }[] | null
+    const cobMesData = cobMesRes.data as { monto: number }[] | null
     setCobranzaStats({
-      hoy: cobHoyRes.data?.reduce((sum, c) => sum + Number(c.monto), 0) || 0,
-      semana: cobSemRes.data?.reduce((sum, c) => sum + Number(c.monto), 0) || 0,
-      mes: cobMesRes.data?.reduce((sum, c) => sum + Number(c.monto), 0) || 0,
+      hoy: cobHoyData?.reduce((sum, c) => sum + Number(c.monto), 0) || 0,
+      semana: cobSemData?.reduce((sum, c) => sum + Number(c.monto), 0) || 0,
+      mes: cobMesData?.reduce((sum, c) => sum + Number(c.monto), 0) || 0,
     })
 
     // Process deudas
-    const totalDeudas = deudasRes.data?.reduce((sum, d) => sum + (Number(d.monto_total) - Number(d.monto_cobrado)), 0) || 0
+    const deudasData = deudasRes.data as { monto_total: number; monto_cobrado: number }[] | null
+    const totalDeudas = deudasData?.reduce((sum, d) => sum + (Number(d.monto_total) - Number(d.monto_cobrado)), 0) || 0
     setDeudasPendientes(totalDeudas)
 
     // Process tareas
     setTareasPendientes(tareasRes.data?.length || 0)
 
     setLoading(false)
-  }, [supabase, hoy, sedeFilter])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hoy, sedeFilter])
 
   useEffect(() => { fetchDashboardData() }, [fetchDashboardData])
 

@@ -145,7 +145,8 @@ export default function HorasTab() {
     }
 
     setLoading(false)
-  }, [supabase, currentYear, currentMonth])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentYear, currentMonth])
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
