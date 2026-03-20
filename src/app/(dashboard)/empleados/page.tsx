@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useAuth } from '@/components/AuthProvider'
+import HorasTab from '@/components/empleados/HorasTab'
 import {
   CheckSquare,
   CalendarDays,
@@ -64,7 +65,7 @@ export default function EmpleadosPage() {
       {/* Tab content */}
       {activeTab === 'tareas' && <TareasTab isAdmin={isAdmin} />}
       {activeTab === 'turnos-agendados' && <TurnosAgendadosTab isAdmin={isAdmin} />}
-      {activeTab === 'horas' && <HorasTab isAdmin={isAdmin} />}
+      {activeTab === 'horas' && <HorasTab />}
       {activeTab === 'config' && isAdmin && <ConfigTab />}
     </div>
   )
@@ -102,21 +103,7 @@ function TurnosAgendadosTab({ isAdmin }: { isAdmin: boolean }) {
   )
 }
 
-function HorasTab({ isAdmin }: { isAdmin: boolean }) {
-  return (
-    <div className="bg-surface rounded-xl border border-border p-8 text-center">
-      <AlertCircle size={40} className="mx-auto text-text-muted mb-3" />
-      <h3 className="text-lg font-semibold text-text-primary mb-2">
-        {isAdmin ? 'Horas del equipo' : 'Mis Horas'}
-      </h3>
-      <p className="text-sm text-text-secondary max-w-md mx-auto">
-        {isAdmin
-          ? 'Horas cargadas por cada empleado, aprobaciones semanales y calculo de costos. Se integrara con el gestor de horas existente.'
-          : 'Tus horas cargadas del mes y el historial.'}
-      </p>
-    </div>
-  )
-}
+// HorasTab is imported from @/components/empleados/HorasTab
 
 function ConfigTab() {
   return (
