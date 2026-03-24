@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "dev",
-      "runtimeExecutable": "/opt/homebrew/opt/node@20/bin/npx",
-      "runtimeArgs": ["next", "dev", "--turbopack", "--port", "3000"],
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["/Users/agustin/Desktop/Business/Gallego/Consultoria/Etapa 5 - Dashboard/ba-dental-gestion 2/.claude/start-dev.sh"],
       "port": 3000
     }
   ]

@@ -129,14 +129,11 @@ export interface EmpleadoConfig {
 export interface ProductoStock {
   id: string
   nombre: string
-  categoria: string
-  sede_id: string
-  cantidad: number
-  stock_minimo: number
   unidad: string
+  stock_minimo: number
+  precio_compra: number | null
+  activo: boolean
   created_at: string
-  // joins
-  sede?: Sede
 }
 
 export interface MovimientoStock {
@@ -145,9 +142,9 @@ export interface MovimientoStock {
   sede_id: string
   tipo: TipoMovimientoStock
   cantidad: number
-  motivo: string | null
-  user_id: string
+  descripcion: string | null
   fecha: string
+  created_by: string | null
   created_at: string
   // joins
   producto?: ProductoStock
