@@ -10,6 +10,7 @@ import {
   AlertCircle,
 } from 'lucide-react'
 import TareasTab from '@/components/empleados/TareasTab'
+import HorasTab from '@/components/empleados/HorasTab'
 
 type TabId = 'tareas' | 'turnos-agendados' | 'horas' | 'config'
 
@@ -83,22 +84,6 @@ function TurnosAgendadosTab({ isAdmin }: { isAdmin: boolean }) {
         {isAdmin
           ? 'Cuantos turnos agendo cada empleado hoy y en la semana. Datos de Dentalink por usuario.'
           : 'Cuantos turnos agendaste hoy y en la semana.'}
-      </p>
-    </div>
-  )
-}
-
-function HorasTab({ isAdmin }: { isAdmin: boolean }) {
-  return (
-    <div className="bg-surface rounded-xl border border-border p-8 text-center">
-      <AlertCircle size={40} className="mx-auto text-text-muted mb-3" />
-      <h3 className="text-lg font-semibold text-text-primary mb-2">
-        {isAdmin ? 'Horas del equipo' : 'Mis Horas'}
-      </h3>
-      <p className="text-sm text-text-secondary max-w-md mx-auto">
-        {isAdmin
-          ? 'Horas cargadas por cada empleado, aprobaciones semanales y calculo de costos. Se integrara con el gestor de horas existente.'
-          : 'Tus horas cargadas del mes y el historial.'}
       </p>
     </div>
   )
