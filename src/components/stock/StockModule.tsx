@@ -11,7 +11,6 @@ import {
   AlertTriangle,
   Building2,
   Filter,
-  ArrowUpDown,
   X,
   Loader2,
   Settings,
@@ -54,16 +53,20 @@ export default function StockModule() {
       const [sedesRes, productosRes, movRes] = await Promise.all([
         supabase.from('sedes').select('*').eq('activa', true).order('nombre'),
         supabase.from('stock_productos').select('*').eq('activo', true).order('nombre'),
-        supabase.from('stock_movimientos').select('*, stock_productos(nombre, unidad), sedes(nombre)').order('fecha', { ascending: false }).order('created_at', { ascending: false }).limit(200),
+        supabase.from('stock_movimientos').select('*').order('fecha', { ascending: false }).order('created_at', { ascending: false }).limit(200),
       ])
+
+      if (sedesRes.error) console.error('Error sedes:', sedesRes.error)
+      if (productosRes.error) console.error('Error productos:', productosRes.error)
+      if (movRes.error) console.error('Error movimientos:', movRes.error)
 
       const sedesData = (sedesRes.data || []) as Sede[]
       const productosData = (productosRes.data || []) as ProductoStock[]
-      const movData = (movRes.data || []) as (MovimientoStock & { stock_productos: { nombre: string; unidad: string }; sedes: { nombre: string } })[]
+      const movData = (movRes.data || []) as MovimientoStock[]
 
       setSedes(sedesData)
       setProductos(productosData)
-      setMovimientos(movData as unknown as MovimientoStock[])
+      setMovimientos(movData)
 
       // Calculate stock per product per sede
       const map: Record<string, StockPorSedeProducto> = {}
@@ -385,19 +388,18 @@ function MovimientosView({
                 </tr>
               ) : (
                 filtered.map(mov => {
-                  const movAny = mov as unknown as Record<string, unknown>
-                  const prodInfo = movAny.stock_productos as { nombre: string; unidad: string } | null
-                  const sedeInfo = movAny.sedes as { nombre: string } | null
+                  const prod = productos.find(p => p.id === mov.producto_id)
+                  const sede = sedes.find(s => s.id === mov.sede_id)
                   return (
                     <tr key={mov.id} className="border-b border-border last:border-0 hover:bg-beige/50">
                       <td className="px-4 py-3 text-text-primary whitespace-nowrap">
                         {formatDate(mov.fecha)}
                       </td>
                       <td className="px-4 py-3 text-text-primary font-medium">
-                        {prodInfo?.nombre || '-'}
+                        {prod?.nombre || '-'}
                       </td>
                       <td className="px-4 py-3 text-text-secondary">
-                        {sedeInfo?.nombre || '-'}
+                        {sede?.nombre || '-'}
                       </td>
                       <td className="px-4 py-3 text-center">
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
