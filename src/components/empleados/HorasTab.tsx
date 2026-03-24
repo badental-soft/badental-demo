@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { createHorasClient } from '@/lib/supabase/horas-client'
+import { useAuth } from '@/components/AuthProvider'
 import {
   ChevronLeft,
   ChevronRight,
@@ -12,14 +13,15 @@ import {
 } from 'lucide-react'
 
 interface HorasEmployee {
-  id: number
+  id: string
   name: string
   active: boolean
+  gestion_user_id: string | null
 }
 
 interface HourEntry {
-  id: number
-  employee_id: number
+  id: string
+  employee_id: string
   date: string
   hours: number
 }
@@ -30,11 +32,12 @@ interface HorasConfig {
 }
 
 export default function HorasTab({ isAdmin }: { isAdmin: boolean }) {
+  const { user } = useAuth()
   const supabase = createHorasClient()
   const [employees, setEmployees] = useState<HorasEmployee[]>([])
   const [entries, setEntries] = useState<HourEntry[]>([])
   const [config, setConfig] = useState<HorasConfig>({ hourly_rate: 8000, sunday_multiplier: 2 })
-  const [selectedEmployee, setSelectedEmployee] = useState<number | null>(null)
+  const [selectedEmployee, setSelectedEmployee] = useState<string | null>(null)
   const [currentMonth, setCurrentMonth] = useState(() => {
     const now = new Date()
     return { year: now.getFullYear(), month: now.getMonth() }
@@ -64,21 +67,27 @@ export default function HorasTab({ isAdmin }: { isAdmin: boolean }) {
     try {
       const { data } = await supabase
         .from('employees')
-        .select('id, name, active')
+        .select('id, name, active, gestion_user_id')
         .eq('active', true)
         .order('name')
       if (data) {
         const emps = data as unknown as HorasEmployee[]
         setEmployees(emps)
         if (emps.length > 0 && selectedEmployee === null) {
-          setSelectedEmployee(emps[0].id)
+          if (!isAdmin && user?.id) {
+            // Non-admin: find their own employee record by gestion_user_id
+            const myEmp = emps.find(e => e.gestion_user_id === user.id)
+            if (myEmp) setSelectedEmployee(myEmp.id)
+          } else {
+            setSelectedEmployee(emps[0].id)
+          }
         }
       }
     } catch (err) {
       console.error('Error fetching employees:', err)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [isAdmin, user?.id])
 
   const fetchEntries = useCallback(async () => {
     setLoading(true)
@@ -114,7 +123,7 @@ export default function HorasTab({ isAdmin }: { isAdmin: boolean }) {
     if (selectedEmployee !== null) fetchEntries()
   }, [fetchEntries, selectedEmployee])
 
-  const upsertHours = async (employeeId: number, date: string, hours: number) => {
+  const upsertHours = async (employeeId: string, date: string, hours: number) => {
     setSaving(true)
     try {
       if (hours === 0) {
@@ -188,7 +197,7 @@ export default function HorasTab({ isAdmin }: { isAdmin: boolean }) {
 
   const { days, startPad } = getDaysInMonth(currentMonth.year, currentMonth.month)
 
-  const getEntryForDay = (employeeId: number, date: Date) => {
+  const getEntryForDay = (employeeId: string, date: Date) => {
     const dateStr = date.toISOString().split('T')[0]
     return entries.find(e => e.employee_id === employeeId && e.date === dateStr)
   }
@@ -196,7 +205,7 @@ export default function HorasTab({ isAdmin }: { isAdmin: boolean }) {
   const isSunday = (date: Date) => date.getDay() === 0
 
   // Calculate totals
-  const getEmployeeTotals = (employeeId: number) => {
+  const getEmployeeTotals = (employeeId: string) => {
     const empEntries = entries.filter(e => e.employee_id === employeeId)
     let totalHours = 0
     let totalPay = 0
@@ -259,7 +268,7 @@ export default function HorasTab({ isAdmin }: { isAdmin: boolean }) {
           <Users size={14} className="text-text-muted" />
           <select
             value={selectedEmployee ?? ''}
-            onChange={(e) => setSelectedEmployee(Number(e.target.value))}
+            onChange={(e) => setSelectedEmployee(e.target.value)}
             className="text-sm border border-border rounded-lg px-3 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-green-primary"
           >
             {employees.map(e => (
@@ -416,10 +425,10 @@ function CalendarGrid({
 }: {
   days: Date[]
   startPad: number
-  employeeId: number
-  getEntryForDay: (empId: number, date: Date) => HourEntry | undefined
+  employeeId: string
+  getEntryForDay: (empId: string, date: Date) => HourEntry | undefined
   isSunday: (date: Date) => boolean
-  onSave: (empId: number, date: string, hours: number) => Promise<void>
+  onSave: (empId: string, date: string, hours: number) => Promise<void>
   saving: boolean
   config: HorasConfig
 }) {
