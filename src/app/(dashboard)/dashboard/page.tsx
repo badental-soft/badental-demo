@@ -103,12 +103,14 @@ function AdminDashboard() {
       let deudasQuery = supabase.from('deudas').select('monto_total, monto_cobrado').in('estado', ['pendiente', 'parcial'])
       if (sedeFilter !== 'todas') deudasQuery = deudasQuery.eq('sede_id', sedeFilter)
 
-      let tareasQuery = supabase.from('tareas').select('id').eq('fecha', hoy).eq('completada', false)
-      if (sedeFilter !== 'todas') tareasQuery = tareasQuery.eq('sede_id', sedeFilter)
+      // Tareas: get plantillas + completadas for today + rolA employees
+      const plantillasQuery = supabase.from('tarea_plantillas').select('id').eq('activa', true)
+      const completadasQuery = supabase.from('tarea_completadas').select('user_id, plantilla_id').eq('fecha', hoy).eq('completada', true)
+      const empleadosQuery = supabase.from('users').select('id').eq('rol', 'rolA')
 
       // Run ALL queries in parallel
-      const [turnosRes, cobHoyRes, cobSemRes, cobMesRes, deudasRes, tareasRes] = await Promise.all([
-        turnosQuery, cobHoyQuery, cobSemQuery, cobMesQuery, deudasQuery, tareasQuery,
+      const [turnosRes, cobHoyRes, cobSemRes, cobMesRes, deudasRes, plantillasRes, completadasTodayRes, empleadosRes] = await Promise.all([
+        turnosQuery, cobHoyQuery, cobSemQuery, cobMesQuery, deudasQuery, plantillasQuery, completadasQuery, empleadosQuery,
       ])
 
       // Process turnos
@@ -146,8 +148,18 @@ function AdminDashboard() {
       const totalDeudas = deudasRes.data?.reduce((sum: number, d: { monto_total: number; monto_cobrado: number }) => sum + (Number(d.monto_total) - Number(d.monto_cobrado)), 0) || 0
       setDeudasPendientes(totalDeudas)
 
-      // Process tareas
-      setTareasPendientes(tareasRes.data?.length || 0)
+      // Process tareas: count pending across all rolA employees
+      const plantillas = plantillasRes.data || []
+      const completadasToday = completadasTodayRes.data || []
+      const empleadosRolA = empleadosRes.data || []
+      let pendientes = 0
+      empleadosRolA.forEach((emp: { id: string }) => {
+        const empCompletadas = completadasToday
+          .filter((c: { user_id: string; plantilla_id: number }) => c.user_id === emp.id)
+          .map((c: { plantilla_id: number }) => c.plantilla_id)
+        pendientes += plantillas.filter((p: { id: number }) => !empCompletadas.includes(p.id)).length
+      })
+      setTareasPendientes(pendientes)
     } catch (err) {
       console.error('Error fetching dashboard:', err)
     }
@@ -245,7 +257,7 @@ function AdminDashboard() {
               icon={<CheckSquare size={20} />}
               label="Tareas pendientes"
               value={tareasPendientes.toString()}
-              subtitle="Para hoy"
+              subtitle="Del equipo hoy"
               color="purple"
             />
             <KPICard
@@ -294,7 +306,7 @@ function AdminDashboard() {
 
           {/* Footer note */}
           <p className="text-xs text-text-muted">
-            Los datos de cobranzas, deudas y tareas se llenarán cuando construyamos esos módulos. Los turnos ya son reales de Dentalink.
+            Turnos y tareas son datos reales. Los datos de cobranzas y deudas se llenarán cuando se construyan esos módulos.
           </p>
         </>
       )}
