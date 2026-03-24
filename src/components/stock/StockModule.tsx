@@ -35,6 +35,7 @@ export default function StockModule() {
   const [activeTab, setActiveTab] = useState<ViewTab>('resumen')
   const [sedes, setSedes] = useState<Sede[]>([])
   const [productos, setProductos] = useState<ProductoStock[]>([])
+  const [todosProductos, setTodosProductos] = useState<ProductoStock[]>([])
   const [movimientos, setMovimientos] = useState<MovimientoStock[]>([])
   const [stockMap, setStockMap] = useState<StockPorSedeProducto[]>([])
   const [loading, setLoading] = useState(true)
@@ -52,7 +53,7 @@ export default function StockModule() {
     try {
       const [sedesRes, productosRes, movRes] = await Promise.all([
         supabase.from('sedes').select('*').eq('activa', true).order('nombre'),
-        supabase.from('stock_productos').select('*').eq('activo', true).order('nombre'),
+        supabase.from('stock_productos').select('*').order('nombre'),
         supabase.from('stock_movimientos').select('*').order('fecha', { ascending: false }).order('created_at', { ascending: false }).limit(200),
       ])
 
@@ -61,17 +62,19 @@ export default function StockModule() {
       if (movRes.error) console.error('Error movimientos:', movRes.error)
 
       const sedesData = (sedesRes.data || []) as Sede[]
-      const productosData = (productosRes.data || []) as ProductoStock[]
+      const allProductos = (productosRes.data || []) as ProductoStock[]
+      const activeProductos = allProductos.filter(p => p.activo)
       const movData = (movRes.data || []) as MovimientoStock[]
 
       setSedes(sedesData)
-      setProductos(productosData)
+      setProductos(activeProductos)
+      setTodosProductos(allProductos)
       setMovimientos(movData)
 
       // Calculate stock per product per sede
       const map: Record<string, StockPorSedeProducto> = {}
       sedesData.forEach(sede => {
-        productosData.forEach(prod => {
+        activeProductos.forEach(prod => {
           const key = `${prod.id}-${sede.id}`
           map[key] = { producto: prod, sede, cantidad: 0 }
         })
@@ -178,7 +181,7 @@ export default function StockModule() {
       )}
       {activeTab === 'productos' && (
         <ProductosView
-          productos={productos}
+          productos={todosProductos}
           onRefresh={fetchData}
         />
       )}
