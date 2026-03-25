@@ -17,15 +17,19 @@ import {
   Clock,
   Receipt,
   AlertCircle,
+  TrendingUp,
+  TrendingDown,
+  CalendarClock,
 } from 'lucide-react'
 import type { Sede, Cobranza } from '@/types/database'
 import { getArgentinaToday } from '@/lib/utils/dates'
 
 type CobranzaConSede = Cobranza & { sedes: Sede }
 
-type TabId = 'cobranzas' | 'por-cobrar' | 'gastos'
+type TabId = 'resumen' | 'cobranzas' | 'por-cobrar' | 'gastos'
 
 const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
+  { id: 'resumen', label: 'Resumen', icon: <TrendingUp size={16} /> },
   { id: 'cobranzas', label: 'Cobranzas', icon: <DollarSign size={16} /> },
   { id: 'por-cobrar', label: 'Por Cobrar', icon: <Clock size={16} /> },
   { id: 'gastos', label: 'Gastos', icon: <Receipt size={16} /> },
@@ -39,7 +43,7 @@ const TIPO_PAGO_LABELS: Record<string, { label: string; icon: React.ReactNode; b
 }
 
 export default function FinanzasPage() {
-  const [activeTab, setActiveTab] = useState<TabId>('cobranzas')
+  const [activeTab, setActiveTab] = useState<TabId>('resumen')
 
   return (
     <div>
@@ -68,9 +72,204 @@ export default function FinanzasPage() {
       </div>
 
       {/* Tab content */}
+      {activeTab === 'resumen' && <ResumenTab />}
       {activeTab === 'cobranzas' && <CobranzasTab />}
       {activeTab === 'por-cobrar' && <PorCobrarTab />}
       {activeTab === 'gastos' && <GastosTab />}
+    </div>
+  )
+}
+
+// ============================================
+// RESUMEN TAB
+// ============================================
+function ResumenTab() {
+  const supabase = createClient()
+  const [loading, setLoading] = useState(true)
+  const [cobradoMes, setCobradoMes] = useState(0)
+  const [cobradoHoy, setCobradoHoy] = useState(0)
+  const [gastosMesPagado, setGastosMesPagado] = useState(0)
+  const [gastosMesPendiente, setGastosMesPendiente] = useState(0)
+  const [deudasPendientes, setDeudasPendientes] = useState(0)
+  const [proximosVencimientos, setProximosVencimientos] = useState<{ id: string; concepto: string; monto: number; fecha_vencimiento: string; categoria: string }[]>([])
+
+  const hoy = getArgentinaToday()
+  const mesActual = hoy.slice(0, 7)
+
+  const fetchResumen = useCallback(async () => {
+    setLoading(true)
+    try {
+      const inicioMes = mesActual + '-01'
+      const [y, m] = mesActual.split('-').map(Number)
+      const lastDay = new Date(y, m, 0).getDate()
+      const finMes = `${mesActual}-${String(lastDay).padStart(2, '0')}`
+
+      const [cobMesRes, cobHoyRes, gastosMesRes, deudasRes, vencimientosRes] = await Promise.all([
+        supabase.from('cobranzas').select('monto').gte('fecha', inicioMes).lte('fecha', finMes),
+        supabase.from('cobranzas').select('monto').eq('fecha', hoy),
+        supabase.from('gastos').select('monto, estado').gte('fecha', inicioMes).lte('fecha', finMes),
+        supabase.from('deudas').select('monto_total, monto_cobrado').in('estado', ['pendiente', 'parcial']),
+        supabase.from('gastos').select('id, concepto, monto, fecha_vencimiento, categoria').eq('estado', 'pendiente').not('fecha_vencimiento', 'is', null).gte('fecha_vencimiento', hoy).order('fecha_vencimiento', { ascending: true }).limit(5),
+      ])
+
+      setCobradoMes(cobMesRes.data?.reduce((s: number, c: { monto: number }) => s + Number(c.monto), 0) || 0)
+      setCobradoHoy(cobHoyRes.data?.reduce((s: number, c: { monto: number }) => s + Number(c.monto), 0) || 0)
+
+      const gastosData = gastosMesRes.data || []
+      setGastosMesPagado(gastosData.filter((g: { estado: string }) => g.estado === 'pagado').reduce((s: number, g: { monto: number }) => s + Number(g.monto), 0))
+      setGastosMesPendiente(gastosData.filter((g: { estado: string }) => g.estado === 'pendiente').reduce((s: number, g: { monto: number }) => s + Number(g.monto), 0))
+
+      setDeudasPendientes(deudasRes.data?.reduce((s: number, d: { monto_total: number; monto_cobrado: number }) => s + (Number(d.monto_total) - Number(d.monto_cobrado)), 0) || 0)
+
+      setProximosVencimientos((vencimientosRes.data as { id: string; concepto: string; monto: number; fecha_vencimiento: string; categoria: string }[]) || [])
+    } catch (err) {
+      console.error('Error fetching resumen:', err)
+    } finally {
+      setLoading(false)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hoy, mesActual])
+
+  useEffect(() => { fetchResumen() }, [fetchResumen])
+
+  const formatMoney = (n: number) =>
+    n.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0 })
+
+  const totalGastosMes = gastosMesPagado + gastosMesPendiente
+  const resultado = cobradoMes - gastosMesPagado
+
+  const formatFechaCorta = (fecha: string) => {
+    const [y, m, d] = fecha.split('-')
+    const meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+    return `${parseInt(d)} ${meses[parseInt(m) - 1]}`
+  }
+
+  if (loading) {
+    return <div className="text-center text-text-muted py-12 text-sm">Cargando resumen...</div>
+  }
+
+  return (
+    <div>
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div className="bg-surface rounded-xl border border-border p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-8 h-8 rounded-lg bg-green-light flex items-center justify-center">
+              <DollarSign size={18} className="text-green-primary" />
+            </div>
+            <span className="text-xs font-medium text-text-muted uppercase tracking-wide">Cobrado hoy</span>
+          </div>
+          <p className="text-xl font-semibold text-green-primary">{formatMoney(cobradoHoy)}</p>
+        </div>
+
+        <div className="bg-surface rounded-xl border border-border p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-8 h-8 rounded-lg bg-green-light flex items-center justify-center">
+              <TrendingUp size={18} className="text-green-primary" />
+            </div>
+            <span className="text-xs font-medium text-text-muted uppercase tracking-wide">Cobrado mes</span>
+          </div>
+          <p className="text-xl font-semibold text-green-primary">{formatMoney(cobradoMes)}</p>
+        </div>
+
+        <div className="bg-surface rounded-xl border border-border p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-8 h-8 rounded-lg bg-red-light flex items-center justify-center">
+              <TrendingDown size={18} className="text-red" />
+            </div>
+            <span className="text-xs font-medium text-text-muted uppercase tracking-wide">Gastos mes</span>
+          </div>
+          <p className="text-xl font-semibold text-red">{formatMoney(totalGastosMes)}</p>
+          <p className="text-xs text-text-muted mt-0.5">
+            {formatMoney(gastosMesPagado)} pagado · {formatMoney(gastosMesPendiente)} pendiente
+          </p>
+        </div>
+
+        <div className="bg-surface rounded-xl border border-border p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <div className={`w-8 h-8 rounded-lg ${resultado >= 0 ? 'bg-green-light' : 'bg-red-light'} flex items-center justify-center`}>
+              <TrendingUp size={18} className={resultado >= 0 ? 'text-green-primary' : 'text-red'} />
+            </div>
+            <span className="text-xs font-medium text-text-muted uppercase tracking-wide">Resultado mes</span>
+          </div>
+          <p className={`text-xl font-semibold ${resultado >= 0 ? 'text-green-primary' : 'text-red'}`}>
+            {formatMoney(resultado)}
+          </p>
+          <p className="text-xs text-text-muted mt-0.5">Cobrado - Gastos pagados</p>
+        </div>
+      </div>
+
+      {/* Second row */}
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+        <div className="bg-surface rounded-xl border border-border p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-8 h-8 rounded-lg bg-gold-light flex items-center justify-center">
+              <Clock size={18} className="text-gold-dark" />
+            </div>
+            <span className="text-xs font-medium text-text-muted uppercase tracking-wide">Por cobrar</span>
+          </div>
+          <p className="text-xl font-semibold text-gold-dark">{formatMoney(deudasPendientes)}</p>
+          <p className="text-xs text-text-muted mt-0.5">Deudas activas de pacientes</p>
+        </div>
+
+        <div className="bg-surface rounded-xl border border-border p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-8 h-8 rounded-lg bg-amber-light flex items-center justify-center">
+              <CalendarClock size={18} className="text-amber" />
+            </div>
+            <span className="text-xs font-medium text-text-muted uppercase tracking-wide">Gastos pendientes</span>
+          </div>
+          <p className="text-xl font-semibold text-amber">{formatMoney(gastosMesPendiente)}</p>
+          <p className="text-xs text-text-muted mt-0.5">Por pagar este mes</p>
+        </div>
+      </div>
+
+      {/* Proximos vencimientos */}
+      <div className="bg-surface rounded-xl border border-border overflow-hidden">
+        <div className="px-5 py-4 border-b border-border">
+          <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
+            <CalendarClock size={16} className="text-text-muted" />
+            Proximos vencimientos
+          </h3>
+        </div>
+        {proximosVencimientos.length === 0 ? (
+          <div className="p-6 text-center text-text-muted text-sm">
+            No hay gastos con vencimientos pendientes
+          </div>
+        ) : (
+          <div className="divide-y divide-border-light">
+            {proximosVencimientos.map(v => {
+              const colors = CATEGORIA_COLORS[v.categoria] || CATEGORIA_COLORS.otros
+              const catLabel = GASTO_CATEGORIAS.find(c => c.value === v.categoria)?.label || v.categoria
+              const diasRestantes = Math.ceil((new Date(v.fecha_vencimiento + 'T12:00:00').getTime() - new Date(hoy + 'T12:00:00').getTime()) / (1000 * 60 * 60 * 24))
+              return (
+                <div key={v.id} className="flex items-center justify-between px-5 py-3 hover:bg-beige/30 transition-colors">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex flex-col items-center justify-center w-12 h-12 bg-beige rounded-lg">
+                      <span className="text-xs text-text-muted leading-tight">{formatFechaCorta(v.fecha_vencimiento).split(' ')[1]}</span>
+                      <span className="text-lg font-semibold text-text-primary leading-tight">{formatFechaCorta(v.fecha_vencimiento).split(' ')[0]}</span>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-text-primary truncate">{v.concepto}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${colors.bg} ${colors.text}`}>
+                          {catLabel}
+                        </span>
+                        <span className={`text-xs ${diasRestantes <= 3 ? 'text-red font-medium' : 'text-text-muted'}`}>
+                          {diasRestantes === 0 ? 'Hoy' : diasRestantes === 1 ? 'Manana' : `En ${diasRestantes} dias`}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <p className="text-sm font-semibold text-text-primary whitespace-nowrap ml-4">
+                    {formatMoney(Number(v.monto))}
+                  </p>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

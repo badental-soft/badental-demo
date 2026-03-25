@@ -13,6 +13,7 @@ import {
   Building2,
   Filter,
 } from 'lucide-react'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import type { Sede } from '@/types/database'
 import { getArgentinaToday, getArgentinaDate, formatFechaHoyAR } from '@/lib/utils/dates'
 import EmpleadoDashboard from '@/components/empleados/EmpleadoDashboard'
@@ -72,6 +73,7 @@ function AdminDashboard() {
   const [cobranzaStats, setCobranzaStats] = useState<CobranzaStats>({ hoy: 0, semana: 0, mes: 0 })
   const [deudasPendientes, setDeudasPendientes] = useState(0)
   const [tareasPendientes, setTareasPendientes] = useState(0)
+  const [chartData, setChartData] = useState<{ dia: string; cobrado: number; gastos: number }[]>([])
   const [loading, setLoading] = useState(true)
 
   const hoy = getArgentinaToday()
@@ -109,9 +111,15 @@ function AdminDashboard() {
       const completadasQuery = supabase.from('tarea_completadas').select('user_id, plantilla_id').eq('fecha', hoy).eq('completada', true)
       const empleadosQuery = supabase.from('users').select('id').eq('rol', 'rolA')
 
+      // Chart: cobranzas + gastos by day this month
+      let chartCobQuery = supabase.from('cobranzas').select('fecha, monto').gte('fecha', inicioMes).lte('fecha', hoy)
+      if (sedeFilter !== 'todas') chartCobQuery = chartCobQuery.eq('sede_id', sedeFilter)
+      let chartGasQuery = supabase.from('gastos').select('fecha, monto').gte('fecha', inicioMes).lte('fecha', hoy)
+      if (sedeFilter !== 'todas') chartGasQuery = chartGasQuery.eq('sede_id', sedeFilter)
+
       // Run ALL queries in parallel
-      const [turnosRes, cobHoyRes, cobSemRes, cobMesRes, deudasRes, plantillasRes, completadasTodayRes, empleadosRes] = await Promise.all([
-        turnosQuery, cobHoyQuery, cobSemQuery, cobMesQuery, deudasQuery, plantillasQuery, completadasQuery, empleadosQuery,
+      const [turnosRes, cobHoyRes, cobSemRes, cobMesRes, deudasRes, plantillasRes, completadasTodayRes, empleadosRes, chartCobRes, chartGasRes] = await Promise.all([
+        turnosQuery, cobHoyQuery, cobSemQuery, cobMesQuery, deudasQuery, plantillasQuery, completadasQuery, empleadosQuery, chartCobQuery, chartGasQuery,
       ])
 
       // Process turnos
@@ -161,6 +169,23 @@ function AdminDashboard() {
         pendientes += plantillas.filter((p: { id: number }) => !empCompletadas.includes(p.id)).length
       })
       setTareasPendientes(pendientes)
+
+      // Process chart data
+      const cobByDay: Record<string, number> = {}
+      const gasByDay: Record<string, number> = {}
+      ;(chartCobRes.data || []).forEach((c: { fecha: string; monto: number }) => {
+        cobByDay[c.fecha] = (cobByDay[c.fecha] || 0) + Number(c.monto)
+      })
+      ;(chartGasRes.data || []).forEach((g: { fecha: string; monto: number }) => {
+        gasByDay[g.fecha] = (gasByDay[g.fecha] || 0) + Number(g.monto)
+      })
+      const allDays = new Set([...Object.keys(cobByDay), ...Object.keys(gasByDay)])
+      const sorted = Array.from(allDays).sort()
+      setChartData(sorted.map(d => ({
+        dia: d.split('-')[2],
+        cobrado: cobByDay[d] || 0,
+        gastos: gasByDay[d] || 0,
+      })))
     } catch (err) {
       console.error('Error fetching dashboard:', err)
     }
@@ -275,6 +300,40 @@ function AdminDashboard() {
             />
           </div>
 
+          {/* Chart: Cobranzas vs Gastos */}
+          {chartData.length > 0 && (
+            <div className="bg-surface rounded-xl border border-border p-5 mb-6">
+              <h2 className="text-sm font-semibold text-text-primary mb-4 flex items-center gap-2">
+                <TrendingUp size={16} className="text-text-muted" />
+                Cobranzas vs Gastos — este mes
+              </h2>
+              <div className="h-[220px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData} barGap={2}>
+                    <XAxis dataKey="dia" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+                    <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={(v: number) => v >= 1000 ? `${Math.round(v / 1000)}k` : String(v)} width={40} />
+                    <Tooltip
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      formatter={(value: any) => Number(value).toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0 })}
+                      labelFormatter={(label: any) => `Día ${label}`}
+                      contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
+                    />
+                    <Bar dataKey="cobrado" name="Cobrado" fill="#4a7c59" radius={[3, 3, 0, 0]} />
+                    <Bar dataKey="gastos" name="Gastos" fill="#dc2626" radius={[3, 3, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="flex items-center gap-4 mt-2 justify-center">
+                <div className="flex items-center gap-1.5 text-xs text-text-muted">
+                  <div className="w-3 h-3 rounded-sm bg-[#4a7c59]" /> Cobrado
+                </div>
+                <div className="flex items-center gap-1.5 text-xs text-text-muted">
+                  <div className="w-3 h-3 rounded-sm bg-[#dc2626]" /> Gastos
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Turnos por sede */}
           {sedeFilter === 'todas' && turnosPorSede.length > 0 && (
             <div className="bg-surface rounded-xl border border-border p-5 mb-6">
@@ -305,9 +364,9 @@ function AdminDashboard() {
             </div>
           )}
 
-          {/* Footer note */}
+          {/* Footer */}
           <p className="text-xs text-text-muted">
-            Turnos y tareas son datos reales. Los datos de cobranzas y deudas se llenarán cuando se construyan esos módulos.
+            Datos en tiempo real de todas las sedes.
           </p>
         </>
       )}
