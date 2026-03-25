@@ -532,10 +532,12 @@ const CATEGORIA_COLORS: Record<string, { bg: string; text: string }> = {
 interface GastoRow {
   id: string
   fecha: string
+  fecha_vencimiento: string | null
   sede_id: string | null
   concepto: string
   categoria: string
   monto: number
+  estado: 'pendiente' | 'pagado'
   pagado_por: string | null
   user_id: string | null
   created_at: string
@@ -556,13 +558,18 @@ function GastosTab() {
   const [sedeFilter, setSedeFilter] = useState('todas')
   const [catFilter, setCatFilter] = useState('todas')
 
+  // Filters
+  const [estadoFilter, setEstadoFilter] = useState('todos')
+
   // Form
   const [form, setForm] = useState({
     fecha: getArgentinaToday(),
+    fecha_vencimiento: '',
     sede_id: '',
     concepto: '',
     categoria: 'otros',
     monto: '',
+    estado: 'pendiente' as string,
     pagado_por: '',
   })
 
@@ -590,6 +597,7 @@ function GastosTab() {
 
       if (sedeFilter !== 'todas') query = query.eq('sede_id', sedeFilter)
       if (catFilter !== 'todas') query = query.eq('categoria', catFilter)
+      if (estadoFilter !== 'todos') query = query.eq('estado', estadoFilter)
 
       const { data, error } = await query
       if (error) console.error('Error fetching gastos:', error)
@@ -600,7 +608,7 @@ function GastosTab() {
       setLoading(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mesFilter, sedeFilter, catFilter])
+  }, [mesFilter, sedeFilter, catFilter, estadoFilter])
 
   useEffect(() => { fetchSedes() }, [fetchSedes])
   useEffect(() => { fetchGastos() }, [fetchGastos])
@@ -611,10 +619,12 @@ function GastosTab() {
     setSaving(true)
     const { error } = await supabase.from('gastos').insert({
       fecha: form.fecha,
+      fecha_vencimiento: form.fecha_vencimiento || null,
       sede_id: form.sede_id || null,
       concepto: form.concepto.trim(),
       categoria: form.categoria,
       monto: parseFloat(form.monto),
+      estado: form.estado,
       tipo: 'variable',
       pagado_por: form.pagado_por.trim() || null,
       user_id: user?.id,
@@ -622,11 +632,21 @@ function GastosTab() {
     if (error) {
       alert('Error al guardar: ' + error.message)
     } else {
-      setForm({ ...form, concepto: '', monto: '', pagado_por: '' })
+      setForm({ ...form, concepto: '', monto: '', pagado_por: '', fecha_vencimiento: '' })
       setShowForm(false)
       fetchGastos()
     }
     setSaving(false)
+  }
+
+  const toggleEstado = async (g: GastoRow) => {
+    const newEstado = g.estado === 'pendiente' ? 'pagado' : 'pendiente'
+    const { error } = await supabase.from('gastos').update({ estado: newEstado }).eq('id', g.id)
+    if (error) {
+      alert('Error: ' + error.message)
+      return
+    }
+    fetchGastos()
   }
 
   const handleDeleteGasto = async (id: string) => {
@@ -655,6 +675,8 @@ function GastosTab() {
   }
 
   const totalMes = gastos.reduce((s, g) => s + Number(g.monto), 0)
+  const totalPendiente = gastos.filter(g => g.estado === 'pendiente').reduce((s, g) => s + Number(g.monto), 0)
+  const totalPagado = gastos.filter(g => g.estado === 'pagado').reduce((s, g) => s + Number(g.monto), 0)
 
   // Group by category for summary
   const porCategoria: Record<string, number> = {}
@@ -749,6 +771,26 @@ function GastosTab() {
                 className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white text-text-primary focus:outline-none focus:border-green-primary"
               />
             </div>
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1">Vencimiento</label>
+              <input
+                type="date"
+                value={form.fecha_vencimiento}
+                onChange={e => setForm({ ...form, fecha_vencimiento: e.target.value })}
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white text-text-primary focus:outline-none focus:border-green-primary"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1">Estado</label>
+              <select
+                value={form.estado}
+                onChange={e => setForm({ ...form, estado: e.target.value })}
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white text-text-primary focus:outline-none focus:border-green-primary"
+              >
+                <option value="pendiente">Pendiente</option>
+                <option value="pagado">Pagado</option>
+              </select>
+            </div>
           </div>
           <div className="flex justify-end mt-4">
             <button
@@ -794,6 +836,15 @@ function GastosTab() {
             <option value="todas">Todas las categorias</option>
             {GASTO_CATEGORIAS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
           </select>
+          <select
+            value={estadoFilter}
+            onChange={e => setEstadoFilter(e.target.value)}
+            className="text-sm border border-border rounded-lg px-3 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-green-primary"
+          >
+            <option value="todos">Todos los estados</option>
+            <option value="pendiente">Pendiente</option>
+            <option value="pagado">Pagado</option>
+          </select>
         </div>
       </div>
 
@@ -803,6 +854,14 @@ function GastosTab() {
           <p className="text-xs text-text-muted font-medium">Total del mes</p>
           <p className="text-xl font-semibold text-red">{formatMoney(totalMes)}</p>
           <p className="text-xs text-text-muted">{gastos.length} gastos</p>
+        </div>
+        <div className="bg-surface rounded-lg border border-border px-4 py-3">
+          <p className="text-xs text-text-muted font-medium">Pagado</p>
+          <p className="text-lg font-semibold text-green-700">{formatMoney(totalPagado)}</p>
+        </div>
+        <div className="bg-surface rounded-lg border border-border px-4 py-3">
+          <p className="text-xs text-text-muted font-medium">Pendiente</p>
+          <p className="text-lg font-semibold text-amber-600">{formatMoney(totalPendiente)}</p>
         </div>
         {categoriasOrdenadas.slice(0, 4).map(([cat, monto]) => {
           const catInfo = GASTO_CATEGORIAS.find(c => c.value === cat)
@@ -834,6 +893,8 @@ function GastosTab() {
                   <th className="text-left px-4 py-3 font-medium text-text-secondary text-xs uppercase tracking-wide hidden sm:table-cell">Categoria</th>
                   <th className="text-left px-4 py-3 font-medium text-text-secondary text-xs uppercase tracking-wide hidden md:table-cell">Sede</th>
                   <th className="text-right px-4 py-3 font-medium text-text-secondary text-xs uppercase tracking-wide">Monto</th>
+                  <th className="text-center px-4 py-3 font-medium text-text-secondary text-xs uppercase tracking-wide">Estado</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-secondary text-xs uppercase tracking-wide hidden lg:table-cell">Vence</th>
                   <th className="text-left px-4 py-3 font-medium text-text-secondary text-xs uppercase tracking-wide hidden lg:table-cell">Pagado por</th>
                   <th className="text-center px-4 py-3 w-10"></th>
                 </tr>
@@ -856,6 +917,22 @@ function GastosTab() {
                       <td className="px-4 py-3 text-text-secondary hidden md:table-cell">{sede?.nombre || 'General'}</td>
                       <td className="px-4 py-3 text-right font-medium text-text-primary whitespace-nowrap">
                         {formatMoney(Number(g.monto))}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={() => toggleEstado(g)}
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer transition-colors ${
+                            g.estado === 'pagado'
+                              ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                              : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                          }`}
+                          title="Click para cambiar estado"
+                        >
+                          {g.estado === 'pagado' ? 'Pagado' : 'Pendiente'}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3 text-text-secondary text-xs hidden lg:table-cell whitespace-nowrap">
+                        {g.fecha_vencimiento ? (() => { const [vy, vm, vd] = g.fecha_vencimiento!.split('-'); return `${vd}/${vm}` })() : '\u2014'}
                       </td>
                       <td className="px-4 py-3 text-text-muted text-xs hidden lg:table-cell">{g.pagado_por || '\u2014'}</td>
                       <td className="px-4 py-3 text-center">

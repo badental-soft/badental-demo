@@ -101,12 +101,14 @@ export interface Hora {
 export interface Gasto {
   id: string
   fecha: string
+  fecha_vencimiento: string | null
   sede_id: string | null
   user_id: string | null
   concepto: string
   categoria: string
   monto: number
   tipo: TipoGasto
+  estado: 'pendiente' | 'pagado'
   pagado_por: string | null
   created_at: string
   // joins
