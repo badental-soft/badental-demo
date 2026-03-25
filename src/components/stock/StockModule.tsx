@@ -221,7 +221,7 @@ function StockResumen({
   const filtered = stockMap.filter(s => {
     if (sedeFilter !== 'todas' && s.sede.id !== sedeFilter) return false
     if (productoFilter !== 'todos' && s.producto.id !== productoFilter) return false
-    if (busqueda && !s.producto.nombre.toLowerCase().includes(busqueda.toLowerCase())) return false
+    if (busqueda && !prodLabel(s.producto).toLowerCase().includes(busqueda.toLowerCase())) return false
     return true
   })
 
@@ -232,7 +232,7 @@ function StockResumen({
   const totalsPorProducto: Record<string, { nombre: string; total: number; minimo: number }> = {}
   stockMap.forEach(s => {
     if (!totalsPorProducto[s.producto.id]) {
-      totalsPorProducto[s.producto.id] = { nombre: s.producto.nombre, total: 0, minimo: s.producto.stock_minimo }
+      totalsPorProducto[s.producto.id] = { nombre: prodLabel(s.producto), total: 0, minimo: s.producto.stock_minimo }
     }
     totalsPorProducto[s.producto.id].total += s.cantidad
   })
@@ -291,7 +291,7 @@ function StockResumen({
           className="text-sm border border-border rounded-lg px-3 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-green-primary"
         >
           <option value="todos">Todos los productos</option>
-          {productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+          {productos.map(p => <option key={p.id} value={p.id}>{prodLabel(p)}</option>)}
         </select>
         <div className="relative ml-auto">
           <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted" />
@@ -344,7 +344,7 @@ function StockResumen({
                       <td className="px-4 py-2.5 font-medium text-text-primary">
                         <span className="flex items-center gap-2">
                           <Package size={14} className="text-text-muted flex-shrink-0" />
-                          {item.producto.nombre}
+                          {prodLabel(item.producto)}
                         </span>
                       </td>
                       <td className="px-4 py-2.5 text-center">
@@ -424,7 +424,7 @@ function MovimientosView({
           className="text-sm border border-border rounded-lg px-3 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-green-primary"
         >
           <option value="todos">Todos los productos</option>
-          {productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+          {productos.map(p => <option key={p.id} value={p.id}>{prodLabel(p)}</option>)}
         </select>
       </div>
 
@@ -459,7 +459,7 @@ function MovimientosView({
                         {formatDate(mov.fecha)}
                       </td>
                       <td className="px-4 py-3 text-text-primary font-medium">
-                        {prod?.nombre || '-'}
+                        {prod ? prodLabel(prod) : '-'}
                       </td>
                       <td className="px-4 py-3 text-text-secondary">
                         {sede?.nombre || '-'}
@@ -498,6 +498,7 @@ function ProductosView({ productos, onRefresh }: { productos: ProductoStock[]; o
   const supabase = createClient()
   const [showForm, setShowForm] = useState(false)
   const [nombre, setNombre] = useState('')
+  const [medida, setMedida] = useState('')
   const [unidad, setUnidad] = useState('unidades')
   const [stockMinimo, setStockMinimo] = useState(3)
   const [precioCompra, setPrecioCompra] = useState('')
@@ -511,19 +512,21 @@ function ProductosView({ productos, onRefresh }: { productos: ProductoStock[]; o
     try {
       const { error: insertError } = await supabase.from('stock_productos').insert({
         nombre: nombre.trim(),
+        medida: medida.trim() || null,
         unidad,
         stock_minimo: stockMinimo,
         precio_compra: precioCompra ? Number(precioCompra) : null,
       })
       if (insertError) {
         if (insertError.code === '23505') {
-          setError(`Ya existe un producto con el nombre "${nombre.trim()}"`)
+          setError(`Ya existe "${nombre.trim()}${medida.trim() ? ' ' + medida.trim() : ''}"`)
         } else {
           setError(insertError.message)
         }
         return
       }
       setNombre('')
+      setMedida('')
       setUnidad('unidades')
       setStockMinimo(3)
       setPrecioCompra('')
@@ -564,13 +567,22 @@ function ProductosView({ productos, onRefresh }: { productos: ProductoStock[]; o
       {/* Add form */}
       {showForm && (
         <div className="bg-surface rounded-xl border border-border p-4 space-y-3">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             <div>
               <label className="text-xs text-text-muted block mb-1">Nombre</label>
               <input
                 value={nombre}
                 onChange={e => setNombre(e.target.value)}
                 placeholder="Ej: Biofix"
+                className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-white text-text-primary focus:outline-none focus:border-green-primary"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-text-muted block mb-1">Medida (opcional)</label>
+              <input
+                value={medida}
+                onChange={e => setMedida(e.target.value)}
+                placeholder="Ej: 3.5x10"
                 className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-white text-text-primary focus:outline-none focus:border-green-primary"
               />
             </div>
@@ -631,6 +643,7 @@ function ProductosView({ productos, onRefresh }: { productos: ProductoStock[]; o
           <thead>
             <tr className="border-b border-border bg-beige">
               <th className="text-left px-4 py-3 font-medium text-text-muted">Nombre</th>
+              <th className="text-left px-4 py-3 font-medium text-text-muted">Medida</th>
               <th className="text-left px-4 py-3 font-medium text-text-muted">Unidad</th>
               <th className="text-center px-4 py-3 font-medium text-text-muted">Stock Min</th>
               <th className="text-right px-4 py-3 font-medium text-text-muted">Precio Compra</th>
@@ -641,6 +654,7 @@ function ProductosView({ productos, onRefresh }: { productos: ProductoStock[]; o
             {productos.map(prod => (
               <tr key={prod.id} className="border-b border-border last:border-0">
                 <td className="px-4 py-3 font-medium text-text-primary">{prod.nombre}</td>
+                <td className="px-4 py-3 text-text-secondary">{prod.medida || '-'}</td>
                 <td className="px-4 py-3 text-text-secondary">{prod.unidad}</td>
                 <td className="px-4 py-3 text-center text-text-primary">{prod.stock_minimo}</td>
                 <td className="px-4 py-3 text-right text-text-primary">
@@ -739,7 +753,7 @@ function MovimientoModal({
               onChange={e => setProductoId(e.target.value)}
               className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-white text-text-primary focus:outline-none focus:border-green-primary"
             >
-              {productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+              {productos.map(p => <option key={p.id} value={p.id}>{prodLabel(p)}</option>)}
             </select>
           </div>
 
@@ -817,4 +831,8 @@ function MovimientoModal({
 function formatDate(dateStr: string): string {
   const [y, m, d] = dateStr.split('-')
   return `${d}/${m}/${y}`
+}
+
+function prodLabel(p: ProductoStock): string {
+  return p.medida ? `${p.nombre} ${p.medida}` : p.nombre
 }

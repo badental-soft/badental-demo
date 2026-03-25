@@ -129,6 +129,7 @@ export interface EmpleadoConfig {
 export interface ProductoStock {
   id: string
   nombre: string
+  medida: string | null
   unidad: string
   stock_minimo: number
   precio_compra: number | null
