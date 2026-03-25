@@ -19,6 +19,7 @@ import {
   AlertCircle,
 } from 'lucide-react'
 import type { Sede, Cobranza } from '@/types/database'
+import { getArgentinaToday } from '@/lib/utils/dates'
 
 type CobranzaConSede = Cobranza & { sedes: Sede }
 
@@ -84,7 +85,7 @@ function CobranzasTab() {
   const [sedes, setSedes] = useState<Sede[]>([])
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
-  const [fecha, setFecha] = useState(() => new Date().toISOString().split('T')[0])
+  const [fecha, setFecha] = useState(() => getArgentinaToday())
   const [sedeFilter, setSedeFilter] = useState<string>('todas')
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -190,8 +191,8 @@ function CobranzasTab() {
     setFecha(d.toISOString().split('T')[0])
   }
 
-  const goToday = () => setFecha(new Date().toISOString().split('T')[0])
-  const isToday = fecha === new Date().toISOString().split('T')[0]
+  const goToday = () => setFecha(getArgentinaToday())
+  const isToday = fecha === getArgentinaToday()
 
   const formatMoney = (n: number) =>
     n.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0 })

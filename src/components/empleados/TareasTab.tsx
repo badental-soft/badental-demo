@@ -11,6 +11,7 @@ import {
   Users,
   Clock,
 } from 'lucide-react'
+import { getArgentinaToday } from '@/lib/utils/dates'
 
 interface Plantilla {
   id: number
@@ -50,7 +51,7 @@ export default function TareasTab({ isAdmin }: { isAdmin: boolean }) {
   const [completadas, setCompletadas] = useState<Completada[]>([])
   const [empleados, setEmpleados] = useState<UserProfile[]>([])
   const [selectedEmpleado, setSelectedEmpleado] = useState<string>('')
-  const [fecha, setFecha] = useState(() => new Date().toISOString().split('T')[0])
+  const [fecha, setFecha] = useState(() => getArgentinaToday())
   const [loading, setLoading] = useState(true)
   const [pendientesAyer, setPendientesAyer] = useState<number[]>([])
 
@@ -181,7 +182,7 @@ export default function TareasTab({ isAdmin }: { isAdmin: boolean }) {
     setFecha(d.toISOString().split('T')[0])
   }
 
-  const isToday = fecha === new Date().toISOString().split('T')[0]
+  const isToday = fecha === getArgentinaToday()
   const completadasCount = completadas.filter(c => c.completada).length
   const totalTareas = plantillas.length
 
@@ -236,7 +237,7 @@ export default function TareasTab({ isAdmin }: { isAdmin: boolean }) {
               <ChevronRight size={18} className="text-text-secondary" />
             </button>
             {!isToday && (
-              <button onClick={() => setFecha(new Date().toISOString().split('T')[0])} className="text-xs text-green-primary hover:text-green-dark font-medium ml-1">
+              <button onClick={() => setFecha(getArgentinaToday())} className="text-xs text-green-primary hover:text-green-dark font-medium ml-1">
                 Hoy
               </button>
             )}
@@ -324,7 +325,7 @@ export default function TareasTab({ isAdmin }: { isAdmin: boolean }) {
             <ChevronRight size={18} className="text-text-secondary" />
           </button>
           {!isToday && (
-            <button onClick={() => setFecha(new Date().toISOString().split('T')[0])} className="text-xs text-green-primary hover:text-green-dark font-medium ml-1">
+            <button onClick={() => setFecha(getArgentinaToday())} className="text-xs text-green-primary hover:text-green-dark font-medium ml-1">
               Hoy
             </button>
           )}

@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   BarChart3,
 } from 'lucide-react'
+import { getArgentinaToday, getArgentinaDate } from '@/lib/utils/dates'
 
 // --- Types ---
 
@@ -101,7 +102,7 @@ export default function HorasTab({ isAdmin }: { isAdmin: boolean }) {
   const [config, setConfig] = useState<HorasConfig>({ hourly_rate: 8000, sunday_multiplier: 2 })
   const [selectedEmployee, setSelectedEmployee] = useState<string | null>(null)
   const [currentMonth, setCurrentMonth] = useState(() => {
-    const now = new Date()
+    const now = getArgentinaDate()
     return { year: now.getFullYear(), month: now.getMonth() }
   })
   const [loading, setLoading] = useState(true)
@@ -341,7 +342,7 @@ export default function HorasTab({ isAdmin }: { isAdmin: boolean }) {
   }
 
   const isCurrentMonth = (() => {
-    const now = new Date()
+    const now = getArgentinaDate()
     return currentMonth.year === now.getFullYear() && currentMonth.month === now.getMonth()
   })()
 
@@ -934,7 +935,7 @@ function CalendarGrid({
   const [editValue, setEditValue] = useState('')
 
   const dayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
-  const todayStr = new Date().toISOString().split('T')[0]
+  const todayStr = getArgentinaToday()
 
   const handleSave = async (date: Date) => {
     const hours = parseFloat(editValue) || 0

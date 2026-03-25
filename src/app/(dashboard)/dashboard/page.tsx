@@ -14,6 +14,7 @@ import {
   Filter,
 } from 'lucide-react'
 import type { Sede } from '@/types/database'
+import { getArgentinaToday, getArgentinaDate, formatFechaHoyAR } from '@/lib/utils/dates'
 import EmpleadoDashboard from '@/components/empleados/EmpleadoDashboard'
 
 interface TurnoStats {
@@ -73,7 +74,7 @@ function AdminDashboard() {
   const [tareasPendientes, setTareasPendientes] = useState(0)
   const [loading, setLoading] = useState(true)
 
-  const hoy = new Date().toISOString().split('T')[0]
+  const hoy = getArgentinaToday()
 
   const fetchSedes = useCallback(async () => {
     const { data } = await supabase.from('sedes').select('*').eq('activa', true).order('nombre')
@@ -175,7 +176,7 @@ function AdminDashboard() {
   }
 
   const formatFechaHoy = () => {
-    return new Date().toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+    return formatFechaHoyAR()
   }
 
   if (user?.rol !== 'admin') {
@@ -347,7 +348,7 @@ function KPICard({ icon, label, value, subtitle, color = 'green' }: {
 }
 
 function getInicioSemana(): string {
-  const d = new Date()
+  const d = getArgentinaDate()
   const day = d.getDay()
   const diff = d.getDate() - day + (day === 0 ? -6 : 1) // Monday
   d.setDate(diff)

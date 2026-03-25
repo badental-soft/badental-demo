@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/components/AuthProvider'
 import type { Sede, ProductoStock, MovimientoStock } from '@/types/database'
+import { getArgentinaToday } from '@/lib/utils/dates'
 import {
   Package,
   Plus,
@@ -11,6 +12,7 @@ import {
   AlertTriangle,
   Building2,
   Filter,
+  Search,
   X,
   Loader2,
   Settings,
@@ -214,26 +216,63 @@ function StockResumen({
   productoFilter: string
   setProductoFilter: (v: string) => void
 }) {
+  const [busqueda, setBusqueda] = useState('')
+
   const filtered = stockMap.filter(s => {
     if (sedeFilter !== 'todas' && s.sede.id !== sedeFilter) return false
     if (productoFilter !== 'todos' && s.producto.id !== productoFilter) return false
+    if (busqueda && !s.producto.nombre.toLowerCase().includes(busqueda.toLowerCase())) return false
     return true
   })
 
-  // Group by sede
-  const bySede: Record<string, StockPorSedeProducto[]> = {}
-  filtered.forEach(s => {
-    if (!bySede[s.sede.id]) bySede[s.sede.id] = []
-    bySede[s.sede.id].push(s)
+  // Alerts (compact, inline)
+  const alerts = stockMap.filter(s => s.cantidad <= s.producto.stock_minimo)
+
+  // Totals per product (across all sedes)
+  const totalsPorProducto: Record<string, { nombre: string; total: number; minimo: number }> = {}
+  stockMap.forEach(s => {
+    if (!totalsPorProducto[s.producto.id]) {
+      totalsPorProducto[s.producto.id] = { nombre: s.producto.nombre, total: 0, minimo: s.producto.stock_minimo }
+    }
+    totalsPorProducto[s.producto.id].total += s.cantidad
   })
 
-  // Alerts
-  const lowStock = stockMap.filter(s => s.cantidad <= s.producto.stock_minimo && s.cantidad > 0)
-  const outOfStock = stockMap.filter(s => s.cantidad <= 0)
+  // Sort: by sede name, then product name
+  const sorted = [...filtered].sort((a, b) => {
+    const sedeCompare = a.sede.nombre.localeCompare(b.sede.nombre)
+    if (sedeCompare !== 0) return sedeCompare
+    return a.producto.nombre.localeCompare(b.producto.nombre)
+  })
 
   return (
-    <div className="space-y-6">
-      {/* Filters */}
+    <div className="space-y-4">
+      {/* Summary cards */}
+      {Object.keys(totalsPorProducto).length > 0 && (
+        <div className="flex flex-wrap gap-3">
+          {Object.values(totalsPorProducto).map(t => (
+            <div key={t.nombre} className="bg-surface rounded-lg border border-border px-4 py-3 flex items-center gap-3">
+              <Package size={16} className="text-text-muted" />
+              <div>
+                <p className="text-xs text-text-muted font-medium">{t.nombre}</p>
+                <p className={`text-lg font-semibold ${t.total <= 0 ? 'text-red' : t.total <= t.minimo * sedes.length ? 'text-amber' : 'text-green-primary'}`}>
+                  {t.total} <span className="text-xs font-normal text-text-muted">total</span>
+                </p>
+              </div>
+            </div>
+          ))}
+          {alerts.length > 0 && (
+            <div className="bg-red-light rounded-lg border border-red/20 px-4 py-3 flex items-center gap-2">
+              <AlertTriangle size={16} className="text-red" />
+              <div>
+                <p className="text-xs text-text-muted font-medium">Alertas</p>
+                <p className="text-lg font-semibold text-red">{alerts.length}</p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Filters + search */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2">
           <Filter size={14} className="text-text-muted" />
@@ -254,72 +293,93 @@ function StockResumen({
           <option value="todos">Todos los productos</option>
           {productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
         </select>
+        <div className="relative ml-auto">
+          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted" />
+          <input
+            value={busqueda}
+            onChange={e => setBusqueda(e.target.value)}
+            placeholder="Buscar producto..."
+            className="text-sm border border-border rounded-lg pl-8 pr-3 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-green-primary w-48"
+          />
+        </div>
       </div>
 
-      {/* Alerts */}
-      {(outOfStock.length > 0 || lowStock.length > 0) && (
-        <div className="space-y-2">
-          {outOfStock.map(s => (
-            <div key={`out-${s.producto.id}-${s.sede.id}`} className="flex items-center gap-2 px-4 py-2 bg-red-light rounded-lg text-sm">
-              <AlertTriangle size={14} className="text-red flex-shrink-0" />
-              <span className="text-red font-medium">Sin stock:</span>
-              <span className="text-text-primary">{s.producto.nombre} en {s.sede.nombre}</span>
-            </div>
-          ))}
-          {lowStock.map(s => (
-            <div key={`low-${s.producto.id}-${s.sede.id}`} className="flex items-center gap-2 px-4 py-2 bg-amber-light rounded-lg text-sm">
-              <AlertTriangle size={14} className="text-amber flex-shrink-0" />
-              <span className="text-amber font-medium">Stock bajo ({s.cantidad}):</span>
-              <span className="text-text-primary">{s.producto.nombre} en {s.sede.nombre} (min: {s.producto.stock_minimo})</span>
-            </div>
-          ))}
+      {/* Table */}
+      <div className="bg-surface rounded-xl border border-border overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-beige">
+                <th className="text-left px-4 py-3 font-medium text-text-muted">Sede</th>
+                <th className="text-left px-4 py-3 font-medium text-text-muted">Producto</th>
+                <th className="text-center px-4 py-3 font-medium text-text-muted">Stock</th>
+                <th className="text-center px-4 py-3 font-medium text-text-muted">Min</th>
+                <th className="text-center px-4 py-3 font-medium text-text-muted">Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-8 text-center text-text-muted">
+                    No hay datos de stock. Registra movimientos de entrada para comenzar.
+                  </td>
+                </tr>
+              ) : (
+                sorted.map(item => {
+                  const isLow = item.cantidad <= item.producto.stock_minimo && item.cantidad > 0
+                  const isOut = item.cantidad <= 0
+                  return (
+                    <tr
+                      key={`${item.producto.id}-${item.sede.id}`}
+                      className={`border-b border-border last:border-0 ${
+                        isOut ? 'bg-red-light/50' : isLow ? 'bg-amber-light/50' : ''
+                      }`}
+                    >
+                      <td className="px-4 py-2.5 text-text-primary">
+                        <span className="flex items-center gap-2">
+                          <Building2 size={14} className="text-text-muted flex-shrink-0" />
+                          {item.sede.nombre}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 font-medium text-text-primary">
+                        <span className="flex items-center gap-2">
+                          <Package size={14} className="text-text-muted flex-shrink-0" />
+                          {item.producto.nombre}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 text-center">
+                        <span className={`text-lg font-semibold ${
+                          isOut ? 'text-red' : isLow ? 'text-amber' : 'text-green-primary'
+                        }`}>
+                          {item.cantidad}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 text-center text-text-muted">
+                        {item.producto.stock_minimo}
+                      </td>
+                      <td className="px-4 py-2.5 text-center">
+                        {isOut ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-light text-red">
+                            <AlertTriangle size={11} /> Sin stock
+                          </span>
+                        ) : isLow ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-light text-amber">
+                            <AlertTriangle size={11} /> Bajo
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-light text-green-primary">
+                            OK
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
         </div>
-      )}
-
-      {/* Cards by sede */}
-      {Object.entries(bySede).map(([sedeId, items]) => {
-        const sede = sedes.find(s => s.id === sedeId)
-        if (!sede) return null
-        return (
-          <div key={sedeId} className="bg-surface rounded-xl border border-border p-5">
-            <h3 className="text-sm font-semibold text-text-primary mb-4 flex items-center gap-2">
-              <Building2 size={16} className="text-text-muted" />
-              {sede.nombre}
-            </h3>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-              {items.map(item => {
-                const isLow = item.cantidad <= item.producto.stock_minimo && item.cantidad > 0
-                const isOut = item.cantidad <= 0
-                return (
-                  <div
-                    key={`${item.producto.id}-${item.sede.id}`}
-                    className={`p-3 rounded-lg border ${
-                      isOut ? 'border-red bg-red-light' : isLow ? 'border-amber bg-amber-light' : 'border-border bg-beige'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 mb-1">
-                      <Package size={14} className={isOut ? 'text-red' : isLow ? 'text-amber' : 'text-text-muted'} />
-                      <span className="text-sm font-medium text-text-primary">{item.producto.nombre}</span>
-                    </div>
-                    <p className={`text-2xl font-semibold ${
-                      isOut ? 'text-red' : isLow ? 'text-amber' : 'text-green-primary'
-                    }`}>
-                      {item.cantidad}
-                    </p>
-                    <p className="text-xs text-text-muted">{item.producto.unidad}</p>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )
-      })}
-
-      {Object.keys(bySede).length === 0 && (
-        <div className="bg-surface rounded-xl border border-border p-8 text-center text-text-muted text-sm">
-          No hay datos de stock. Registra movimientos de entrada para comenzar.
-        </div>
-      )}
+      </div>
     </div>
   )
 }
@@ -622,7 +682,7 @@ function MovimientoModal({
   const [sedeId, setSedeId] = useState(sedes[0]?.id || '')
   const [cantidad, setCantidad] = useState(1)
   const [descripcion, setDescripcion] = useState('')
-  const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0])
+  const [fecha, setFecha] = useState(getArgentinaToday())
   const [saving, setSaving] = useState(false)
 
   const [error, setError] = useState('')

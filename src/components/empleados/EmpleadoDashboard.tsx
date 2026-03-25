@@ -13,6 +13,7 @@ import {
   TrendingUp,
   AlertCircle,
 } from 'lucide-react'
+import { getArgentinaToday } from '@/lib/utils/dates'
 
 interface HorasEmployee {
   id: string
@@ -70,7 +71,7 @@ export default function EmpleadoDashboard() {
     if (!user?.id) return
     setLoading(true)
     try {
-      const hoy = new Date().toISOString().split('T')[0]
+      const hoy = getArgentinaToday()
 
       // --- TAREAS ---
       const [plantillasRes, completadasRes] = await Promise.all([

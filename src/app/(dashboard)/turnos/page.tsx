@@ -17,6 +17,7 @@ import {
   Search,
 } from 'lucide-react'
 import type { Turno, Sede } from '@/types/database'
+import { getArgentinaToday } from '@/lib/utils/dates'
 
 type TurnoConSede = Turno & { sedes: Sede }
 
@@ -34,7 +35,7 @@ export default function TurnosPage() {
   const [sedes, setSedes] = useState<Sede[]>([])
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
-  const [fecha, setFecha] = useState(() => new Date().toISOString().split('T')[0])
+  const [fecha, setFecha] = useState(() => getArgentinaToday())
   const [sedeFilter, setSedeFilter] = useState<string>('todas')
   const [busqueda, setBusqueda] = useState('')
 
@@ -102,7 +103,7 @@ export default function TurnosPage() {
     setFecha(d.toISOString().split('T')[0])
   }
 
-  const goToday = () => setFecha(new Date().toISOString().split('T')[0])
+  const goToday = () => setFecha(getArgentinaToday())
 
   // Filter by search
   const turnosFiltrados = busqueda.trim()
@@ -126,7 +127,7 @@ export default function TurnosPage() {
     return d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })
   }
 
-  const isToday = fecha === new Date().toISOString().split('T')[0]
+  const isToday = fecha === getArgentinaToday()
 
   return (
     <div>
