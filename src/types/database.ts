@@ -102,11 +102,12 @@ export interface Gasto {
   id: string
   fecha: string
   sede_id: string | null
-  user_id: string
+  user_id: string | null
   concepto: string
   categoria: string
   monto: number
   tipo: TipoGasto
+  pagado_por: string | null
   created_at: string
   // joins
   sede?: Sede

@@ -181,7 +181,11 @@ function CobranzasTab() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('¿Eliminar esta cobranza?')) return
-    await supabase.from('cobranzas').delete().eq('id', id)
+    const { error } = await supabase.from('cobranzas').delete().eq('id', id)
+    if (error) {
+      alert('Error al eliminar: ' + error.message)
+      return
+    }
     fetchCobranzas()
   }
 
@@ -496,16 +500,387 @@ function PorCobrarTab() {
 }
 
 // ============================================
-// GASTOS TAB (placeholder)
+// GASTOS TAB
 // ============================================
+
+const GASTO_CATEGORIAS: { value: string; label: string }[] = [
+  { value: 'personal', label: 'Personal de trabajo' },
+  { value: 'laboratorio', label: 'Laboratorio / Coronas' },
+  { value: 'sueldos', label: 'Sueldos' },
+  { value: 'publicidad', label: 'Publicidad / Marketing' },
+  { value: 'limpieza', label: 'Limpieza' },
+  { value: 'implantes', label: 'Implantes' },
+  { value: 'insumos', label: 'Insumos / Materiales' },
+  { value: 'alquiler', label: 'Alquiler' },
+  { value: 'servicios', label: 'Servicios (luz, internet, etc)' },
+  { value: 'otros', label: 'Otros' },
+]
+
+const CATEGORIA_COLORS: Record<string, { bg: string; text: string }> = {
+  personal: { bg: 'bg-blue-light', text: 'text-blue' },
+  laboratorio: { bg: 'bg-purple-light', text: 'text-purple' },
+  sueldos: { bg: 'bg-green-light', text: 'text-green-primary' },
+  publicidad: { bg: 'bg-amber-light', text: 'text-amber' },
+  limpieza: { bg: 'bg-blue-light', text: 'text-blue' },
+  implantes: { bg: 'bg-red-light', text: 'text-red' },
+  insumos: { bg: 'bg-gold-light', text: 'text-gold-dark' },
+  alquiler: { bg: 'bg-purple-light', text: 'text-purple' },
+  servicios: { bg: 'bg-amber-light', text: 'text-amber' },
+  otros: { bg: 'bg-beige', text: 'text-text-secondary' },
+}
+
+interface GastoRow {
+  id: string
+  fecha: string
+  sede_id: string | null
+  concepto: string
+  categoria: string
+  monto: number
+  pagado_por: string | null
+  user_id: string | null
+  created_at: string
+}
+
 function GastosTab() {
+  const { user } = useAuth()
+  const supabase = createClient()
+
+  const [gastos, setGastos] = useState<GastoRow[]>([])
+  const [sedes, setSedes] = useState<Sede[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showForm, setShowForm] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  // Filters
+  const [mesFilter, setMesFilter] = useState(() => getArgentinaToday().slice(0, 7)) // YYYY-MM
+  const [sedeFilter, setSedeFilter] = useState('todas')
+  const [catFilter, setCatFilter] = useState('todas')
+
+  // Form
+  const [form, setForm] = useState({
+    fecha: getArgentinaToday(),
+    sede_id: '',
+    concepto: '',
+    categoria: 'otros',
+    monto: '',
+    pagado_por: '',
+  })
+
+  const fetchSedes = useCallback(async () => {
+    const { data } = await supabase.from('sedes').select('*').eq('activa', true).order('nombre')
+    if (data) setSedes(data)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const fetchGastos = useCallback(async () => {
+    setLoading(true)
+    try {
+      const inicioMes = mesFilter + '-01'
+      const [y, m] = mesFilter.split('-').map(Number)
+      const lastDay = new Date(y, m, 0).getDate()
+      const finMes = `${mesFilter}-${String(lastDay).padStart(2, '0')}`
+
+      let query = supabase
+        .from('gastos')
+        .select('*')
+        .gte('fecha', inicioMes)
+        .lte('fecha', finMes)
+        .order('fecha', { ascending: false })
+        .order('created_at', { ascending: false })
+
+      if (sedeFilter !== 'todas') query = query.eq('sede_id', sedeFilter)
+      if (catFilter !== 'todas') query = query.eq('categoria', catFilter)
+
+      const { data, error } = await query
+      if (error) console.error('Error fetching gastos:', error)
+      setGastos((data as GastoRow[]) || [])
+    } catch (err) {
+      console.error('Error:', err)
+    } finally {
+      setLoading(false)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mesFilter, sedeFilter, catFilter])
+
+  useEffect(() => { fetchSedes() }, [fetchSedes])
+  useEffect(() => { fetchGastos() }, [fetchGastos])
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!form.concepto || !form.monto) return
+    setSaving(true)
+    const { error } = await supabase.from('gastos').insert({
+      fecha: form.fecha,
+      sede_id: form.sede_id || null,
+      concepto: form.concepto.trim(),
+      categoria: form.categoria,
+      monto: parseFloat(form.monto),
+      tipo: 'variable',
+      pagado_por: form.pagado_por.trim() || null,
+      user_id: user?.id,
+    })
+    if (error) {
+      alert('Error al guardar: ' + error.message)
+    } else {
+      setForm({ ...form, concepto: '', monto: '', pagado_por: '' })
+      setShowForm(false)
+      fetchGastos()
+    }
+    setSaving(false)
+  }
+
+  const handleDeleteGasto = async (id: string) => {
+    if (!confirm('¿Eliminar este gasto?')) return
+    const { error } = await supabase.from('gastos').delete().eq('id', id)
+    if (error) {
+      alert('Error al eliminar: ' + error.message)
+      return
+    }
+    fetchGastos()
+  }
+
+  const changeMonth = (offset: number) => {
+    const [y, m] = mesFilter.split('-').map(Number)
+    const d = new Date(y, m - 1 + offset, 1)
+    setMesFilter(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+  }
+
+  const formatMoney = (n: number) =>
+    n.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0 })
+
+  const formatMes = (ym: string) => {
+    const [y, m] = ym.split('-').map(Number)
+    const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+    return `${meses[m - 1]} ${y}`
+  }
+
+  const totalMes = gastos.reduce((s, g) => s + Number(g.monto), 0)
+
+  // Group by category for summary
+  const porCategoria: Record<string, number> = {}
+  gastos.forEach(g => {
+    porCategoria[g.categoria] = (porCategoria[g.categoria] || 0) + Number(g.monto)
+  })
+  const categoriasOrdenadas = Object.entries(porCategoria).sort((a, b) => b[1] - a[1])
+
   return (
-    <div className="bg-surface rounded-xl border border-border p-8 text-center">
-      <AlertCircle size={40} className="mx-auto text-text-muted mb-3" />
-      <h3 className="text-lg font-semibold text-text-primary mb-2">Gastos</h3>
-      <p className="text-sm text-text-secondary max-w-md mx-auto">
-        Control de gastos por categoria y sede. Este modulo se activara cuando se carguen los datos desde el Excel de gastos.
-      </p>
+    <div>
+      {/* Actions */}
+      <div className="flex items-center gap-2 mb-4">
+        <button
+          onClick={() => setShowForm(!showForm)}
+          className="inline-flex items-center gap-2 px-4 py-2 bg-green-primary hover:bg-green-dark text-white text-sm font-medium rounded-lg transition-colors"
+        >
+          {showForm ? <X size={16} /> : <Plus size={16} />}
+          {showForm ? 'Cancelar' : 'Nuevo Gasto'}
+        </button>
+      </div>
+
+      {/* Form */}
+      {showForm && (
+        <form onSubmit={handleSubmit} className="bg-surface rounded-xl border border-border p-5 mb-6">
+          <h2 className="text-sm font-semibold text-text-primary mb-4">Registrar gasto</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1">Fecha *</label>
+              <input
+                type="date"
+                value={form.fecha}
+                onChange={e => setForm({ ...form, fecha: e.target.value })}
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white text-text-primary focus:outline-none focus:border-green-primary"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1">Descripcion *</label>
+              <input
+                type="text"
+                value={form.concepto}
+                onChange={e => setForm({ ...form, concepto: e.target.value })}
+                placeholder="Ej: Corona paciente X, Sueldo Rosita..."
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white text-text-primary focus:outline-none focus:border-green-primary"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1">Categoria *</label>
+              <select
+                value={form.categoria}
+                onChange={e => setForm({ ...form, categoria: e.target.value })}
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white text-text-primary focus:outline-none focus:border-green-primary"
+              >
+                {GASTO_CATEGORIAS.map(c => (
+                  <option key={c.value} value={c.value}>{c.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1">Monto *</label>
+              <input
+                type="number"
+                min="1"
+                step="0.01"
+                value={form.monto}
+                onChange={e => setForm({ ...form, monto: e.target.value })}
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white text-text-primary focus:outline-none focus:border-green-primary"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1">Sede</label>
+              <select
+                value={form.sede_id}
+                onChange={e => setForm({ ...form, sede_id: e.target.value })}
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white text-text-primary focus:outline-none focus:border-green-primary"
+              >
+                <option value="">General (sin sede)</option>
+                {sedes.map(s => (
+                  <option key={s.id} value={s.id}>{s.nombre}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1">Pagado por</label>
+              <input
+                type="text"
+                value={form.pagado_por}
+                onChange={e => setForm({ ...form, pagado_por: e.target.value })}
+                placeholder="Ej: Lean, Ani (opcional)"
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white text-text-primary focus:outline-none focus:border-green-primary"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end mt-4">
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-5 py-2 bg-green-primary hover:bg-green-dark text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+            >
+              {saving ? 'Guardando...' : 'Guardar'}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Month nav + filters */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-6">
+        <div className="flex items-center gap-2 bg-surface border border-border rounded-lg px-2 py-1.5">
+          <button onClick={() => changeMonth(-1)} className="p-1 hover:bg-beige rounded transition-colors">
+            <ChevronLeft size={18} className="text-text-secondary" />
+          </button>
+          <span className="text-sm font-medium text-text-primary px-2 min-w-[140px] text-center">
+            {formatMes(mesFilter)}
+          </span>
+          <button onClick={() => changeMonth(1)} className="p-1 hover:bg-beige rounded transition-colors">
+            <ChevronRight size={18} className="text-text-secondary" />
+          </button>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+          <Filter size={14} className="text-text-muted" />
+          <select
+            value={sedeFilter}
+            onChange={e => setSedeFilter(e.target.value)}
+            className="text-sm border border-border rounded-lg px-3 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-green-primary"
+          >
+            <option value="todas">Todas las sedes</option>
+            {sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+          </select>
+          <select
+            value={catFilter}
+            onChange={e => setCatFilter(e.target.value)}
+            className="text-sm border border-border rounded-lg px-3 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-green-primary"
+          >
+            <option value="todas">Todas las categorias</option>
+            {GASTO_CATEGORIAS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {/* Summary cards */}
+      <div className="flex flex-wrap gap-3 mb-6">
+        <div className="bg-surface rounded-lg border border-border px-4 py-3">
+          <p className="text-xs text-text-muted font-medium">Total del mes</p>
+          <p className="text-xl font-semibold text-red">{formatMoney(totalMes)}</p>
+          <p className="text-xs text-text-muted">{gastos.length} gastos</p>
+        </div>
+        {categoriasOrdenadas.slice(0, 4).map(([cat, monto]) => {
+          const catInfo = GASTO_CATEGORIAS.find(c => c.value === cat)
+          const colors = CATEGORIA_COLORS[cat] || CATEGORIA_COLORS.otros
+          return (
+            <div key={cat} className="bg-surface rounded-lg border border-border px-4 py-3">
+              <p className="text-xs text-text-muted font-medium">{catInfo?.label || cat}</p>
+              <p className={`text-lg font-semibold ${colors.text}`}>{formatMoney(monto)}</p>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Table */}
+      <div className="bg-surface rounded-xl border border-border overflow-hidden">
+        {loading ? (
+          <div className="p-8 text-center text-text-muted text-sm">Cargando gastos...</div>
+        ) : gastos.length === 0 ? (
+          <div className="p-8 text-center text-text-muted text-sm">
+            No hay gastos registrados en {formatMes(mesFilter)}
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-beige/50">
+                  <th className="text-left px-4 py-3 font-medium text-text-secondary text-xs uppercase tracking-wide">Fecha</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-secondary text-xs uppercase tracking-wide">Descripcion</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-secondary text-xs uppercase tracking-wide hidden sm:table-cell">Categoria</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-secondary text-xs uppercase tracking-wide hidden md:table-cell">Sede</th>
+                  <th className="text-right px-4 py-3 font-medium text-text-secondary text-xs uppercase tracking-wide">Monto</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-secondary text-xs uppercase tracking-wide hidden lg:table-cell">Pagado por</th>
+                  <th className="text-center px-4 py-3 w-10"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {gastos.map(g => {
+                  const colors = CATEGORIA_COLORS[g.categoria] || CATEGORIA_COLORS.otros
+                  const catLabel = GASTO_CATEGORIAS.find(c => c.value === g.categoria)?.label || g.categoria
+                  const sede = sedes.find(s => s.id === g.sede_id)
+                  const [y, m, d] = g.fecha.split('-')
+                  return (
+                    <tr key={g.id} className="border-b border-border-light hover:bg-beige/30 transition-colors">
+                      <td className="px-4 py-3 text-text-primary whitespace-nowrap">{d}/{m}</td>
+                      <td className="px-4 py-3 text-text-primary max-w-[250px] truncate">{g.concepto}</td>
+                      <td className="px-4 py-3 hidden sm:table-cell">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${colors.bg} ${colors.text}`}>
+                          {catLabel}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-text-secondary hidden md:table-cell">{sede?.nombre || 'General'}</td>
+                      <td className="px-4 py-3 text-right font-medium text-text-primary whitespace-nowrap">
+                        {formatMoney(Number(g.monto))}
+                      </td>
+                      <td className="px-4 py-3 text-text-muted text-xs hidden lg:table-cell">{g.pagado_por || '\u2014'}</td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={() => handleDeleteGasto(g.id)}
+                          className="text-text-muted hover:text-red transition-colors"
+                          title="Eliminar"
+                        >
+                          <X size={14} />
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {!loading && gastos.length > 0 && (
+        <p className="text-xs text-text-muted mt-3">
+          {gastos.length} gasto{gastos.length !== 1 ? 's' : ''} · Total: {formatMoney(totalMes)}
+        </p>
+      )}
     </div>
   )
 }
