@@ -23,6 +23,7 @@ interface NavItem {
   href: string
   icon: React.ReactNode
   roles: string[]
+  disabled?: boolean
 }
 
 const adminNavItems: NavItem[] = [
@@ -30,8 +31,8 @@ const adminNavItems: NavItem[] = [
   { label: 'Turnos', href: '/turnos', icon: <CalendarDays size={20} />, roles: ['admin'] },
   { label: 'Finanzas', href: '/finanzas', icon: <Wallet size={20} />, roles: ['admin'] },
   { label: 'Stock', href: '/stock', icon: <Package size={20} />, roles: ['admin', 'rolC'] },
-  { label: 'Empleados', href: '/empleados', icon: <Users size={20} />, roles: ['admin'] },
-  { label: 'Configuración', href: '/configuracion', icon: <Settings size={20} />, roles: ['admin'] },
+  { label: 'Empleados', href: '/empleados', icon: <Users size={20} />, roles: ['admin'], disabled: true },
+  { label: 'Configuración', href: '/configuracion', icon: <Settings size={20} />, roles: ['admin'], disabled: true },
 ]
 
 const employeeNavItems: NavItem[] = [
@@ -108,6 +109,27 @@ export default function Sidebar() {
           <div className="space-y-0.5">
             {filteredItems.map((item) => {
               const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
+
+              if (item.disabled) {
+                return (
+                  <span
+                    key={item.href}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium opacity-40 cursor-not-allowed select-none
+                      ${collapsed ? 'justify-center' : ''}
+                    `}
+                    title={collapsed ? `${item.label} (próximamente)` : 'Próximamente'}
+                  >
+                    <span className="text-text-muted">{item.icon}</span>
+                    {!collapsed && (
+                      <>
+                        {item.label}
+                        <span className="ml-auto text-[9px] uppercase tracking-wider text-text-muted font-semibold">Pronto</span>
+                      </>
+                    )}
+                  </span>
+                )
+              }
+
               return (
                 <Link
                   key={item.href}
