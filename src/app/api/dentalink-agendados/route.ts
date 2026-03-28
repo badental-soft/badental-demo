@@ -86,9 +86,28 @@ export async function GET(request: Request) {
     })
 
     // 3. Filtrar: solo citas con ID > maxIdAnterior (nuevas, no modificaciones)
-    const citasNuevas = maxIdAnterior > 0
+    const citasPorId = maxIdAnterior > 0
       ? citasHoy.filter(c => c.id > maxIdAnterior)
       : citasHoy // fallback si no hay baseline
+
+    // 4. Filtrar solo pacientes "primera vez" por comentario
+    function esPrimeraVez(comentario: string): boolean {
+      const c = (comentario || '').toLowerCase()
+      return (
+        c.includes('primera vez') ||
+        c.includes('1ra vez') ||
+        c.includes('1° vez') ||
+        c.includes('1era vez') ||
+        c.includes('primer vez') ||
+        c.includes('pv') ||
+        c.includes('primera consulta') ||
+        c.includes('paciente nuevo') ||
+        c.includes('pac nuevo') ||
+        c.includes('pac nueva')
+      )
+    }
+
+    const citasNuevas = citasPorId.filter(c => esPrimeraVez(c.comentarios))
 
     // Detectar origen del comentario
     function detectarOrigen(comentario: string): string {
@@ -126,6 +145,7 @@ export async function GET(request: Request) {
       fecha,
       total: agendados.length,
       total_modificados: citasHoy.length,
+      total_ids_nuevos: citasPorId.length,
       max_id_anterior: maxIdAnterior,
       por_sede: porSede,
       por_origen: porOrigen,

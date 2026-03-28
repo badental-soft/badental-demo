@@ -432,17 +432,9 @@ function AgendadosTab() {
         </div>
       ) : (
         <>
-          {/* Summary cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+          {/* Summary: total + por sede */}
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 mb-4">
             <StatCard icon={<CalendarPlus size={18} />} label="Turnos dados" value={data.total} color="text-text-primary" />
-            <StatCard icon={<TrendingUp size={18} />} label="Sedes activas" value={Object.keys(data.por_sede).length} color="text-blue" />
-            {Object.entries(data.por_origen).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([origen, count]) => (
-              <StatCard key={origen} icon={<MessageSquare size={18} />} label={origen} value={count} color={ORIGEN_COLORS[origen]?.text || 'text-gray-600'} />
-            ))}
-          </div>
-
-          {/* Por sede cards */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
             {Object.entries(data.por_sede).sort((a, b) => b[1] - a[1]).map(([sede, count]) => (
               <button
                 key={sede}
@@ -459,6 +451,7 @@ function AgendadosTab() {
               </button>
             ))}
           </div>
+
 
           {/* Por origen badges */}
           <div className="flex flex-wrap gap-2 mb-4">
