@@ -29,6 +29,7 @@ export interface Cobranza {
   id: string
   fecha: string
   sede_id: string
+  sede_ids: string[]
   user_id: string | null
   paciente: string
   tratamiento: string
@@ -37,6 +38,9 @@ export interface Cobranza {
   es_cuota: boolean
   notas: string | null
   dentalink_id: number | null
+  moneda: string
+  monto_original: number | null
+  tipo_cambio: number | null
   created_at: string
   // joins
   sede?: Sede
@@ -103,7 +107,7 @@ export interface Gasto {
   id: string
   fecha: string
   fecha_vencimiento: string | null
-  sede_id: string | null
+  sede_ids: string[]
   user_id: string | null
   concepto: string
   categoria: string
@@ -112,9 +116,6 @@ export interface Gasto {
   estado: 'pendiente' | 'pagado'
   pagado_por: string | null
   created_at: string
-  // joins
-  sede?: Sede
-  user?: User
 }
 
 export interface EmpleadoConfig {

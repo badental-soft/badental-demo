@@ -29,6 +29,26 @@ type CobranzaConSede = Cobranza & { sedes: Sede }
 
 type TabId = 'resumen' | 'cobranzas' | 'por-cobrar' | 'gastos'
 
+function useDolarOficial() {
+  const [cotizacion, setCotizacion] = useState<number | null>(null)
+  const [loadingDolar, setLoadingDolar] = useState(false)
+
+  const fetchDolar = useCallback(async () => {
+    setLoadingDolar(true)
+    try {
+      const res = await fetch('/api/dolar')
+      if (res.ok) {
+        const data = await res.json()
+        setCotizacion(data.venta)
+      }
+    } catch { /* ignore */ } finally {
+      setLoadingDolar(false)
+    }
+  }, [])
+
+  return { cotizacion, loadingDolar, fetchDolar }
+}
+
 const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
   { id: 'resumen', label: 'Resumen', icon: <TrendingUp size={16} /> },
   { id: 'cobranzas', label: 'Cobranzas', icon: <DollarSign size={16} /> },
@@ -289,6 +309,9 @@ function CobranzasTab() {
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
 
+  // USD
+  const { cotizacion, loadingDolar, fetchDolar } = useDolarOficial()
+
   const [formData, setFormData] = useState({
     paciente: '',
     tratamiento: '',
@@ -296,7 +319,11 @@ function CobranzasTab() {
     tipo_pago: 'efectivo' as string,
     es_cuota: false,
     notas: '',
-    sede_id: '',
+    sede_ids: [] as string[],
+    sedeMode: 'una' as 'una' | 'varias',
+    moneda: 'ARS' as string,
+    monto_usd: '',
+    tipo_cambio: '',
   })
 
   const fetchSedes = useCallback(async () => {
@@ -332,25 +359,46 @@ function CobranzasTab() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!formData.paciente || !formData.monto || !formData.sede_id) return
+    if (!formData.paciente) return
+    const sedeIds = formData.sedeMode === 'una' ? formData.sede_ids.slice(0, 1) : formData.sede_ids
+    if (sedeIds.length === 0) return
+
+    const isUSD = formData.moneda === 'USD'
+    let montoARS: number
+    let montoOriginal: number | null = null
+    let tipoCambio: number | null = null
+
+    if (isUSD) {
+      if (!formData.monto_usd || !formData.tipo_cambio) return
+      montoOriginal = parseFloat(formData.monto_usd)
+      tipoCambio = parseFloat(formData.tipo_cambio)
+      montoARS = montoOriginal * tipoCambio
+    } else {
+      if (!formData.monto) return
+      montoARS = parseFloat(formData.monto)
+    }
 
     setSaving(true)
     const { error } = await supabase.from('cobranzas').insert({
       fecha,
-      sede_id: formData.sede_id,
+      sede_id: sedeIds[0],
+      sede_ids: sedeIds,
       user_id: user?.id,
       paciente: formData.paciente,
       tratamiento: formData.tratamiento || 'Sin especificar',
       tipo_pago: formData.tipo_pago,
-      monto: parseFloat(formData.monto),
+      monto: montoARS,
       es_cuota: formData.es_cuota,
       notas: formData.notas || null,
+      moneda: formData.moneda,
+      monto_original: montoOriginal,
+      tipo_cambio: tipoCambio,
     })
 
     if (error) {
       alert('Error al guardar: ' + error.message)
     } else {
-      setFormData({ paciente: '', tratamiento: '', monto: '', tipo_pago: 'efectivo', es_cuota: false, notas: '', sede_id: formData.sede_id })
+      setFormData({ ...formData, paciente: '', tratamiento: '', monto: '', monto_usd: '', tipo_cambio: '', es_cuota: false, notas: '', moneda: 'ARS' })
       setShowForm(false)
       fetchCobranzas()
     }
@@ -435,17 +483,92 @@ function CobranzasTab() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-text-secondary mb-1">Monto *</label>
-              <input
-                type="number"
-                min="1"
-                step="0.01"
-                value={formData.monto}
-                onChange={e => setFormData({ ...formData, monto: e.target.value })}
+              <label className="block text-xs font-medium text-text-secondary mb-1">Moneda</label>
+              <select
+                value={formData.moneda}
+                onChange={e => {
+                  const moneda = e.target.value
+                  setFormData({ ...formData, moneda, monto: '', monto_usd: '', tipo_cambio: '' })
+                  if (moneda === 'USD' && !cotizacion) fetchDolar()
+                }}
                 className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white text-text-primary focus:outline-none focus:border-green-primary"
-                required
-              />
+              >
+                <option value="ARS">ARS (Pesos)</option>
+                <option value="USD">USD (Dólares)</option>
+              </select>
             </div>
+            {formData.moneda === 'ARS' ? (
+              <div>
+                <label className="block text-xs font-medium text-text-secondary mb-1">Monto *</label>
+                <input
+                  type="number"
+                  min="1"
+                  step="0.01"
+                  value={formData.monto}
+                  onChange={e => setFormData({ ...formData, monto: e.target.value })}
+                  className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white text-text-primary focus:outline-none focus:border-green-primary"
+                  required
+                />
+              </div>
+            ) : (
+              <>
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1">Monto USD *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="0.01"
+                    value={formData.monto_usd}
+                    onChange={e => {
+                      const usd = e.target.value
+                      const tc = formData.tipo_cambio ? parseFloat(formData.tipo_cambio) : 0
+                      setFormData({ ...formData, monto_usd: usd, monto: usd && tc ? String(parseFloat(usd) * tc) : '' })
+                    }}
+                    className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white text-text-primary focus:outline-none focus:border-green-primary"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1">
+                    Tipo de cambio *
+                    {loadingDolar && <span className="ml-1 text-text-muted">(cargando...)</span>}
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      min="1"
+                      step="0.01"
+                      value={formData.tipo_cambio}
+                      onChange={e => {
+                        const tc = e.target.value
+                        const usd = formData.monto_usd ? parseFloat(formData.monto_usd) : 0
+                        setFormData({ ...formData, tipo_cambio: tc, monto: usd && tc ? String(usd * parseFloat(tc)) : '' })
+                      }}
+                      placeholder={cotizacion ? `Oficial: $${cotizacion}` : ''}
+                      className="flex-1 border border-border rounded-lg px-3 py-2 text-sm bg-white text-text-primary focus:outline-none focus:border-green-primary"
+                      required
+                    />
+                    {cotizacion && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const usd = formData.monto_usd ? parseFloat(formData.monto_usd) : 0
+                          setFormData({ ...formData, tipo_cambio: String(cotizacion), monto: usd ? String(usd * cotizacion) : '' })
+                        }}
+                        className="px-2 py-1 text-xs bg-blue-light text-blue rounded-lg hover:bg-blue-100 transition-colors whitespace-nowrap"
+                      >
+                        Usar oficial
+                      </button>
+                    )}
+                  </div>
+                  {formData.monto_usd && formData.tipo_cambio && (
+                    <p className="text-xs text-text-muted mt-1">
+                      = {formatMoney(parseFloat(formData.monto_usd) * parseFloat(formData.tipo_cambio))}
+                    </p>
+                  )}
+                </div>
+              </>
+            )}
             <div>
               <label className="block text-xs font-medium text-text-secondary mb-1">Medio de pago *</label>
               <select
@@ -459,19 +582,61 @@ function CobranzasTab() {
                 <option value="tarjeta_credito">Tarjeta Crédito</option>
               </select>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-text-secondary mb-1">Sede *</label>
-              <select
-                value={formData.sede_id}
-                onChange={e => setFormData({ ...formData, sede_id: e.target.value })}
-                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white text-text-primary focus:outline-none focus:border-green-primary"
-                required
-              >
-                <option value="">Seleccionar sede</option>
-                {sedes.map(s => (
-                  <option key={s.id} value={s.id}>{s.nombre}</option>
-                ))}
-              </select>
+            <div className="sm:col-span-2 lg:col-span-3">
+              <label className="block text-xs font-medium text-text-secondary mb-1">Sedes *</label>
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+                  <input
+                    type="radio"
+                    checked={formData.sedeMode === 'una'}
+                    onChange={() => setFormData({ ...formData, sedeMode: 'una', sede_ids: formData.sede_ids.slice(0, 1) })}
+                    className="accent-green-primary"
+                  />
+                  <span className="text-text-primary">Una sede</span>
+                </label>
+                <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+                  <input
+                    type="radio"
+                    checked={formData.sedeMode === 'varias'}
+                    onChange={() => setFormData({ ...formData, sedeMode: 'varias' })}
+                    className="accent-green-primary"
+                  />
+                  <span className="text-text-primary">Dividir entre sedes</span>
+                </label>
+                <div className="flex flex-wrap gap-2 ml-2">
+                  {sedes.map(s => {
+                    const checked = formData.sede_ids.includes(s.id)
+                    return (
+                      <label
+                        key={s.id}
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium cursor-pointer border transition-colors ${
+                          checked
+                            ? 'bg-green-100 border-green-300 text-green-700'
+                            : 'bg-beige border-border text-text-secondary hover:border-gray-300'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            let newIds: string[]
+                            if (formData.sedeMode === 'una') {
+                              newIds = checked ? [] : [s.id]
+                            } else {
+                              newIds = checked
+                                ? formData.sede_ids.filter(id => id !== s.id)
+                                : [...formData.sede_ids, s.id]
+                            }
+                            setFormData({ ...formData, sede_ids: newIds })
+                          }}
+                          className="hidden"
+                        />
+                        {s.nombre}
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
             </div>
             <div>
               <label className="block text-xs font-medium text-text-secondary mb-1">Notas</label>
@@ -624,6 +789,11 @@ function CobranzasTab() {
                       </td>
                       <td className="px-4 py-3 text-right font-medium text-text-primary whitespace-nowrap">
                         {formatMoney(Number(c.monto))}
+                        {c.moneda === 'USD' && c.monto_original && (
+                          <span className="block text-[10px] text-blue font-medium">
+                            US$ {Number(c.monto_original).toLocaleString('es-AR')} @ ${Number(c.tipo_cambio).toLocaleString('es-AR')}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-text-muted text-xs hidden lg:table-cell max-w-[200px] truncate">
                         {c.notas || '\u2014'}
@@ -708,12 +878,16 @@ interface GastoRow {
   id: string
   fecha: string
   fecha_vencimiento: string | null
-  sede_id: string | null
+  sede_ids: string[]
   concepto: string
   categoria: string
   monto: number
   estado: 'pendiente' | 'pagado'
   pagado_por: string | null
+  tipo_pago: string | null
+  moneda: string
+  monto_original: number | null
+  tipo_cambio: number | null
   user_id: string | null
   created_at: string
 }
@@ -736,16 +910,24 @@ function GastosTab() {
   // Filters
   const [estadoFilter, setEstadoFilter] = useState('todos')
 
+  // USD
+  const { cotizacion, loadingDolar, fetchDolar } = useDolarOficial()
+
   // Form
   const [form, setForm] = useState({
     fecha: getArgentinaToday(),
     fecha_vencimiento: '',
-    sede_id: '',
+    sede_ids: [] as string[],
+    sedeMode: 'general' as 'general' | 'algunas',
     concepto: '',
     categoria: 'otros',
     monto: '',
     estado: 'pendiente' as string,
     pagado_por: '',
+    tipo_pago: 'efectivo' as string,
+    moneda: 'ARS' as string,
+    monto_usd: '',
+    tipo_cambio: '',
   })
 
   const fetchSedes = useCallback(async () => {
@@ -770,7 +952,7 @@ function GastosTab() {
         .order('fecha', { ascending: false })
         .order('created_at', { ascending: false })
 
-      if (sedeFilter !== 'todas') query = query.eq('sede_id', sedeFilter)
+      // sede filter is applied client-side to include general gastos (empty sede_ids)
       if (catFilter !== 'todas') query = query.eq('categoria', catFilter)
       if (estadoFilter !== 'todos') query = query.eq('estado', estadoFilter)
 
@@ -783,31 +965,52 @@ function GastosTab() {
       setLoading(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mesFilter, sedeFilter, catFilter, estadoFilter])
+  }, [mesFilter, catFilter, estadoFilter])
 
   useEffect(() => { fetchSedes() }, [fetchSedes])
   useEffect(() => { fetchGastos() }, [fetchGastos])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!form.concepto || !form.monto) return
+    if (!form.concepto) return
+
+    const isUSD = form.moneda === 'USD'
+    let montoARS: number
+    let montoOriginal: number | null = null
+    let tipoCambio: number | null = null
+
+    if (isUSD) {
+      if (!form.monto_usd || !form.tipo_cambio) return
+      montoOriginal = parseFloat(form.monto_usd)
+      tipoCambio = parseFloat(form.tipo_cambio)
+      montoARS = montoOriginal * tipoCambio
+    } else {
+      if (!form.monto) return
+      montoARS = parseFloat(form.monto)
+    }
+
     setSaving(true)
+    const sedeIds = form.sedeMode === 'general' ? [] : form.sede_ids
     const { error } = await supabase.from('gastos').insert({
       fecha: form.fecha,
       fecha_vencimiento: form.fecha_vencimiento || null,
-      sede_id: form.sede_id || null,
+      sede_ids: sedeIds,
       concepto: form.concepto.trim(),
       categoria: form.categoria,
-      monto: parseFloat(form.monto),
+      monto: montoARS,
       estado: form.estado,
       tipo: 'variable',
       pagado_por: form.pagado_por.trim() || null,
+      tipo_pago: form.tipo_pago,
+      moneda: form.moneda,
+      monto_original: montoOriginal,
+      tipo_cambio: tipoCambio,
       user_id: user?.id,
     })
     if (error) {
       alert('Error al guardar: ' + error.message)
     } else {
-      setForm({ ...form, concepto: '', monto: '', pagado_por: '', fecha_vencimiento: '' })
+      setForm({ ...form, concepto: '', monto: '', monto_usd: '', tipo_cambio: '', pagado_por: '', fecha_vencimiento: '', sede_ids: [], sedeMode: 'general', moneda: 'ARS' })
       setShowForm(false)
       fetchGastos()
     }
@@ -849,16 +1052,49 @@ function GastosTab() {
     return `${meses[m - 1]} ${y}`
   }
 
-  const totalMes = gastos.reduce((s, g) => s + Number(g.monto), 0)
-  const totalPendiente = gastos.filter(g => g.estado === 'pendiente').reduce((s, g) => s + Number(g.monto), 0)
-  const totalPagado = gastos.filter(g => g.estado === 'pagado').reduce((s, g) => s + Number(g.monto), 0)
+  // Client-side sede filter: include gastos that contain the sede OR are general (empty sede_ids)
+  const gastosFiltrados = sedeFilter === 'todas'
+    ? gastos
+    : gastos.filter(g => {
+        const ids = g.sede_ids || []
+        return ids.length === 0 || ids.includes(sedeFilter)
+      })
+
+  const totalMes = gastosFiltrados.reduce((s, g) => s + Number(g.monto), 0)
+  const totalPendiente = gastosFiltrados.filter(g => g.estado === 'pendiente').reduce((s, g) => s + Number(g.monto), 0)
+  const totalPagado = gastosFiltrados.filter(g => g.estado === 'pagado').reduce((s, g) => s + Number(g.monto), 0)
 
   // Group by category for summary
   const porCategoria: Record<string, number> = {}
-  gastos.forEach(g => {
+  gastosFiltrados.forEach(g => {
     porCategoria[g.categoria] = (porCategoria[g.categoria] || 0) + Number(g.monto)
   })
   const categoriasOrdenadas = Object.entries(porCategoria).sort((a, b) => b[1] - a[1])
+
+  // Per-sede totals (proporcional) — always calculated from ALL gastos (not filtered)
+  const porSede: Record<string, number> = {}
+  gastos.forEach(g => {
+    const monto = Number(g.monto)
+    const sedeIds = g.sede_ids || []
+    if (sedeIds.length === 0) {
+      // General: dividir entre todas las sedes
+      sedes.forEach(s => {
+        porSede[s.id] = (porSede[s.id] || 0) + monto / sedes.length
+      })
+    } else {
+      // Dividir entre las sedes seleccionadas
+      sedeIds.forEach((sid: string) => {
+        porSede[sid] = (porSede[sid] || 0) + monto / sedeIds.length
+      })
+    }
+  })
+
+  const getSedeLabel = (g: GastoRow): string => {
+    const ids = g.sede_ids || []
+    if (ids.length === 0) return 'General'
+    if (ids.length === sedes.length) return 'Todas'
+    return ids.map(id => sedes.find(s => s.id === id)?.nombre || '').filter(Boolean).join(', ')
+  }
 
   return (
     <div>
@@ -912,29 +1148,157 @@ function GastosTab() {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-text-secondary mb-1">Monto *</label>
-              <input
-                type="number"
-                min="1"
-                step="0.01"
-                value={form.monto}
-                onChange={e => setForm({ ...form, monto: e.target.value })}
-                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white text-text-primary focus:outline-none focus:border-green-primary"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-text-secondary mb-1">Sede</label>
+              <label className="block text-xs font-medium text-text-secondary mb-1">Moneda</label>
               <select
-                value={form.sede_id}
-                onChange={e => setForm({ ...form, sede_id: e.target.value })}
+                value={form.moneda}
+                onChange={e => {
+                  const moneda = e.target.value
+                  setForm({ ...form, moneda, monto: '', monto_usd: '', tipo_cambio: '' })
+                  if (moneda === 'USD' && !cotizacion) fetchDolar()
+                }}
                 className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white text-text-primary focus:outline-none focus:border-green-primary"
               >
-                <option value="">General (sin sede)</option>
-                {sedes.map(s => (
-                  <option key={s.id} value={s.id}>{s.nombre}</option>
-                ))}
+                <option value="ARS">ARS (Pesos)</option>
+                <option value="USD">USD (Dólares)</option>
               </select>
+            </div>
+            {form.moneda === 'ARS' ? (
+              <div>
+                <label className="block text-xs font-medium text-text-secondary mb-1">Monto *</label>
+                <input
+                  type="number"
+                  min="1"
+                  step="0.01"
+                  value={form.monto}
+                  onChange={e => setForm({ ...form, monto: e.target.value })}
+                  className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white text-text-primary focus:outline-none focus:border-green-primary"
+                  required
+                />
+              </div>
+            ) : (
+              <>
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1">Monto USD *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="0.01"
+                    value={form.monto_usd}
+                    onChange={e => {
+                      const usd = e.target.value
+                      const tc = form.tipo_cambio ? parseFloat(form.tipo_cambio) : 0
+                      setForm({ ...form, monto_usd: usd, monto: usd && tc ? String(parseFloat(usd) * tc) : '' })
+                    }}
+                    className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white text-text-primary focus:outline-none focus:border-green-primary"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1">
+                    Tipo de cambio *
+                    {loadingDolar && <span className="ml-1 text-text-muted">(cargando...)</span>}
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      min="1"
+                      step="0.01"
+                      value={form.tipo_cambio}
+                      onChange={e => {
+                        const tc = e.target.value
+                        const usd = form.monto_usd ? parseFloat(form.monto_usd) : 0
+                        setForm({ ...form, tipo_cambio: tc, monto: usd && tc ? String(usd * parseFloat(tc)) : '' })
+                      }}
+                      placeholder={cotizacion ? `Oficial: $${cotizacion}` : ''}
+                      className="flex-1 border border-border rounded-lg px-3 py-2 text-sm bg-white text-text-primary focus:outline-none focus:border-green-primary"
+                      required
+                    />
+                    {cotizacion && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const usd = form.monto_usd ? parseFloat(form.monto_usd) : 0
+                          setForm({ ...form, tipo_cambio: String(cotizacion), monto: usd ? String(usd * cotizacion) : '' })
+                        }}
+                        className="px-2 py-1 text-xs bg-blue-light text-blue rounded-lg hover:bg-blue-100 transition-colors whitespace-nowrap"
+                      >
+                        Usar oficial
+                      </button>
+                    )}
+                  </div>
+                  {form.monto_usd && form.tipo_cambio && (
+                    <p className="text-xs text-text-muted mt-1">
+                      = {formatMoney(parseFloat(form.monto_usd) * parseFloat(form.tipo_cambio))}
+                    </p>
+                  )}
+                </div>
+              </>
+            )}
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1">Medio de pago</label>
+              <select
+                value={form.tipo_pago}
+                onChange={e => setForm({ ...form, tipo_pago: e.target.value })}
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white text-text-primary focus:outline-none focus:border-green-primary"
+              >
+                <option value="efectivo">Efectivo</option>
+                <option value="transferencia">Transferencia</option>
+                <option value="tarjeta_debito">Tarjeta Débito</option>
+                <option value="tarjeta_credito">Tarjeta Crédito</option>
+              </select>
+            </div>
+            <div className="sm:col-span-2 lg:col-span-3">
+              <label className="block text-xs font-medium text-text-secondary mb-1">Sedes</label>
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+                  <input
+                    type="radio"
+                    checked={form.sedeMode === 'general'}
+                    onChange={() => setForm({ ...form, sedeMode: 'general', sede_ids: [] })}
+                    className="accent-green-primary"
+                  />
+                  <span className="text-text-primary">General (todas)</span>
+                </label>
+                <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+                  <input
+                    type="radio"
+                    checked={form.sedeMode === 'algunas'}
+                    onChange={() => setForm({ ...form, sedeMode: 'algunas' })}
+                    className="accent-green-primary"
+                  />
+                  <span className="text-text-primary">Seleccionar sedes</span>
+                </label>
+                {form.sedeMode === 'algunas' && (
+                  <div className="flex flex-wrap gap-2 ml-2">
+                    {sedes.map(s => {
+                      const checked = form.sede_ids.includes(s.id)
+                      return (
+                        <label
+                          key={s.id}
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium cursor-pointer border transition-colors ${
+                            checked
+                              ? 'bg-green-100 border-green-300 text-green-700'
+                              : 'bg-beige border-border text-text-secondary hover:border-gray-300'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => {
+                              const newIds = checked
+                                ? form.sede_ids.filter(id => id !== s.id)
+                                : [...form.sede_ids, s.id]
+                              setForm({ ...form, sede_ids: newIds })
+                            }}
+                            className="hidden"
+                          />
+                          {s.nombre}
+                        </label>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
             <div>
               <label className="block text-xs font-medium text-text-secondary mb-1">Pagado por</label>
@@ -1024,7 +1388,7 @@ function GastosTab() {
       </div>
 
       {/* Summary cards */}
-      <div className="flex flex-wrap gap-3 mb-6">
+      <div className="flex flex-wrap gap-3 mb-4">
         <div className="bg-surface rounded-lg border border-border px-4 py-3">
           <p className="text-xs text-text-muted font-medium">Total del mes</p>
           <p className="text-xl font-semibold text-red">{formatMoney(totalMes)}</p>
@@ -1050,11 +1414,37 @@ function GastosTab() {
         })}
       </div>
 
+      {/* Per-sede breakdown */}
+      {gastos.length > 0 && sedes.length > 0 && (
+        <div className="bg-surface rounded-xl border border-border p-4 mb-6">
+          <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-3">Gasto por sede (proporcional)</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            {sedes.map(s => {
+              const total = porSede[s.id] || 0
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => setSedeFilter(sedeFilter === s.id ? 'todas' : s.id)}
+                  className={`rounded-lg border px-3 py-2 text-left transition-all ${
+                    sedeFilter === s.id
+                      ? 'bg-green-50 border-green-200 ring-2 ring-green-primary/20'
+                      : 'border-border hover:border-gray-300'
+                  }`}
+                >
+                  <p className="text-xs text-text-muted truncate">{s.nombre}</p>
+                  <p className="text-sm font-semibold text-text-primary">{formatMoney(total)}</p>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       <div className="bg-surface rounded-xl border border-border overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-text-muted text-sm">Cargando gastos...</div>
-        ) : gastos.length === 0 ? (
+        ) : gastosFiltrados.length === 0 ? (
           <div className="p-8 text-center text-text-muted text-sm">
             No hay gastos registrados en {formatMes(mesFilter)}
           </div>
@@ -1066,20 +1456,23 @@ function GastosTab() {
                   <th className="text-left px-4 py-3 font-medium text-text-secondary text-xs uppercase tracking-wide">Fecha</th>
                   <th className="text-left px-4 py-3 font-medium text-text-secondary text-xs uppercase tracking-wide">Descripcion</th>
                   <th className="text-left px-4 py-3 font-medium text-text-secondary text-xs uppercase tracking-wide hidden sm:table-cell">Categoria</th>
-                  <th className="text-left px-4 py-3 font-medium text-text-secondary text-xs uppercase tracking-wide hidden md:table-cell">Sede</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-secondary text-xs uppercase tracking-wide hidden md:table-cell">Sedes</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-secondary text-xs uppercase tracking-wide hidden lg:table-cell">Medio</th>
                   <th className="text-right px-4 py-3 font-medium text-text-secondary text-xs uppercase tracking-wide">Monto</th>
                   <th className="text-center px-4 py-3 font-medium text-text-secondary text-xs uppercase tracking-wide">Estado</th>
                   <th className="text-left px-4 py-3 font-medium text-text-secondary text-xs uppercase tracking-wide hidden lg:table-cell">Vence</th>
-                  <th className="text-left px-4 py-3 font-medium text-text-secondary text-xs uppercase tracking-wide hidden lg:table-cell">Pagado por</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-secondary text-xs uppercase tracking-wide hidden xl:table-cell">Pagado por</th>
                   <th className="text-center px-4 py-3 w-10"></th>
                 </tr>
               </thead>
               <tbody>
-                {gastos.map(g => {
+                {gastosFiltrados.map(g => {
                   const colors = CATEGORIA_COLORS[g.categoria] || CATEGORIA_COLORS.otros
                   const catLabel = GASTO_CATEGORIAS.find(c => c.value === g.categoria)?.label || g.categoria
-                  const sede = sedes.find(s => s.id === g.sede_id)
-                  const [y, m, d] = g.fecha.split('-')
+                  const sedeLabel = getSedeLabel(g)
+                  const sedeIds = g.sede_ids || []
+                  const cantSedes = sedeIds.length === 0 ? sedes.length : sedeIds.length
+                  const [, m, d] = g.fecha.split('-')
                   return (
                     <tr key={g.id} className="border-b border-border-light hover:bg-beige/30 transition-colors">
                       <td className="px-4 py-3 text-text-primary whitespace-nowrap">{d}/{m}</td>
@@ -1089,9 +1482,30 @@ function GastosTab() {
                           {catLabel}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-text-secondary hidden md:table-cell">{sede?.nombre || 'General'}</td>
+                      <td className="px-4 py-3 hidden md:table-cell">
+                        <span className="text-text-secondary text-xs">{sedeLabel}</span>
+                        {cantSedes > 1 && (
+                          <span className="text-text-muted text-[10px] ml-1">
+                            ({formatMoney(Number(g.monto) / cantSedes)} c/u)
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 hidden lg:table-cell">
+                        {g.tipo_pago && TIPO_PAGO_LABELS[g.tipo_pago] ? (
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${TIPO_PAGO_LABELS[g.tipo_pago].bg} ${TIPO_PAGO_LABELS[g.tipo_pago].text}`}>
+                            {TIPO_PAGO_LABELS[g.tipo_pago].label}
+                          </span>
+                        ) : (
+                          <span className="text-text-muted text-xs">{'\u2014'}</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-right font-medium text-text-primary whitespace-nowrap">
                         {formatMoney(Number(g.monto))}
+                        {g.moneda === 'USD' && g.monto_original && (
+                          <span className="block text-[10px] text-blue font-medium">
+                            US$ {Number(g.monto_original).toLocaleString('es-AR')} @ ${Number(g.tipo_cambio).toLocaleString('es-AR')}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-center">
                         <button
@@ -1107,9 +1521,9 @@ function GastosTab() {
                         </button>
                       </td>
                       <td className="px-4 py-3 text-text-secondary text-xs hidden lg:table-cell whitespace-nowrap">
-                        {g.fecha_vencimiento ? (() => { const [vy, vm, vd] = g.fecha_vencimiento!.split('-'); return `${vd}/${vm}` })() : '\u2014'}
+                        {g.fecha_vencimiento ? (() => { const [, vm, vd] = g.fecha_vencimiento!.split('-'); return `${vd}/${vm}` })() : '\u2014'}
                       </td>
-                      <td className="px-4 py-3 text-text-muted text-xs hidden lg:table-cell">{g.pagado_por || '\u2014'}</td>
+                      <td className="px-4 py-3 text-text-muted text-xs hidden xl:table-cell">{g.pagado_por || '\u2014'}</td>
                       <td className="px-4 py-3 text-center">
                         <button
                           onClick={() => handleDeleteGasto(g.id)}
@@ -1128,9 +1542,9 @@ function GastosTab() {
         )}
       </div>
 
-      {!loading && gastos.length > 0 && (
+      {!loading && gastosFiltrados.length > 0 && (
         <p className="text-xs text-text-muted mt-3">
-          {gastos.length} gasto{gastos.length !== 1 ? 's' : ''} · Total: {formatMoney(totalMes)}
+          {gastosFiltrados.length} gasto{gastosFiltrados.length !== 1 ? 's' : ''} · Total: {formatMoney(totalMes)}
         </p>
       )}
     </div>
