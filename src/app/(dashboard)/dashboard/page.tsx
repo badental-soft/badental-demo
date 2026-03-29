@@ -106,10 +106,10 @@ function AdminDashboard() {
       let deudasQuery = supabase.from('deudas').select('monto_total, monto_cobrado').in('estado', ['pendiente', 'parcial'])
       if (sedeFilter !== 'todas') deudasQuery = deudasQuery.eq('sede_id', sedeFilter)
 
-      // Tareas: get plantillas + completadas for today + rolA employees
-      const plantillasQuery = supabase.from('tarea_plantillas').select('id').eq('activa', true)
+      // Tareas: get plantillas (con rol) + completadas for today + all employees with roles
+      const plantillasQuery = supabase.from('tarea_plantillas').select('id, rol').eq('activa', true)
       const completadasQuery = supabase.from('tarea_completadas').select('user_id, plantilla_id').eq('fecha', hoy).eq('completada', true)
-      const empleadosQuery = supabase.from('users').select('id').eq('rol', 'rolA')
+      const empleadosQuery = supabase.from('users').select('id, rol').in('rol', ['rolA', 'rolB', 'rolC'])
 
       // Chart: cobranzas + gastos by day this month
       let chartCobQuery = supabase.from('cobranzas').select('fecha, monto').gte('fecha', inicioMes).lte('fecha', hoy)
@@ -157,16 +157,17 @@ function AdminDashboard() {
       const totalDeudas = deudasRes.data?.reduce((sum: number, d: { monto_total: number; monto_cobrado: number }) => sum + (Number(d.monto_total) - Number(d.monto_cobrado)), 0) || 0
       setDeudasPendientes(totalDeudas)
 
-      // Process tareas: count pending across all rolA employees
+      // Process tareas: count pending per employee (only their rol's plantillas)
       const plantillas = plantillasRes.data || []
       const completadasToday = completadasTodayRes.data || []
-      const empleadosRolA = empleadosRes.data || []
+      const empleados = empleadosRes.data || []
       let pendientes = 0
-      empleadosRolA.forEach((emp: { id: string }) => {
+      empleados.forEach((emp: { id: string; rol: string }) => {
+        const empPlantillas = plantillas.filter((p: { id: number; rol: string }) => p.rol === emp.rol)
         const empCompletadas = completadasToday
           .filter((c: { user_id: string; plantilla_id: number }) => c.user_id === emp.id)
           .map((c: { plantilla_id: number }) => c.plantilla_id)
-        pendientes += plantillas.filter((p: { id: number }) => !empCompletadas.includes(p.id)).length
+        pendientes += empPlantillas.filter((p: { id: number }) => !empCompletadas.includes(p.id)).length
       })
       setTareasPendientes(pendientes)
 
