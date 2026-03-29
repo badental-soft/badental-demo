@@ -119,32 +119,29 @@ export default function TareasTab({ isAdmin }: { isAdmin: boolean }) {
       .eq('fecha', fecha)
     setCompletadas(data || [])
 
-    // Check yesterday's pending tasks
+    // Check yesterday's pending tasks (only if user had activity yesterday)
     const ayer = new Date(fecha + 'T12:00:00')
     ayer.setDate(ayer.getDate() - 1)
     const fechaAyer = ayer.toISOString().split('T')[0]
-    const { data: ayerData } = await supabase
-      .from('tarea_completadas')
-      .select('plantilla_id')
-      .eq('user_id', userId)
-      .eq('fecha', fechaAyer)
-      .eq('completada', false)
 
-    // Also check tasks that weren't created yesterday (= not done)
     if (plantillas.length > 0) {
-      const ayerCompletadasIds = (ayerData || []).map((d: { plantilla_id: number }) => d.plantilla_id)
       const { data: ayerAllData } = await supabase
         .from('tarea_completadas')
-        .select('plantilla_id')
+        .select('plantilla_id, completada')
         .eq('user_id', userId)
         .eq('fecha', fechaAyer)
-      const ayerAllIds = (ayerAllData || []).map((d: { plantilla_id: number }) => d.plantilla_id)
-      // Pending = explicitly incomplete + never created yesterday
-      const pendientes = [
-        ...ayerCompletadasIds,
-        ...plantillas.filter(p => !ayerAllIds.includes(p.id)).map(p => p.id),
-      ]
-      setPendientesAyer(pendientes)
+
+      // Solo mostrar pendientes si el usuario tuvo actividad ayer
+      if (ayerAllData && ayerAllData.length > 0) {
+        const ayerAllIds = ayerAllData.map((d: { plantilla_id: number }) => d.plantilla_id)
+        const ayerIncompletas = ayerAllData
+          .filter((d: { completada: boolean }) => !d.completada)
+          .map((d: { plantilla_id: number }) => d.plantilla_id)
+        const nuncaCreadas = plantillas.filter(p => !ayerAllIds.includes(p.id)).map(p => p.id)
+        setPendientesAyer([...ayerIncompletas, ...nuncaCreadas])
+      } else {
+        setPendientesAyer([])
+      }
     }
 
     setLoading(false)
