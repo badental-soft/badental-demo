@@ -158,7 +158,10 @@ export async function DELETE(request: Request) {
 
   const supabaseAdmin = getSupabaseAdmin()
 
-  // Eliminar perfil primero
+  // Eliminar registros relacionados primero (FK constraints)
+  await supabaseAdmin.from('tarea_completadas').delete().eq('user_id', id)
+
+  // Eliminar perfil
   const { error: profileError } = await supabaseAdmin
     .from('users')
     .delete()
