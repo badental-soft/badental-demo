@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { fetchPaginado } from '@/lib/dentalink'
 
+const API_BASE = process.env.DENTALINK_API_BASE || 'https://api.dentalink.healthatom.com/api/v1'
+const API_TOKEN = process.env.DENTALINK_API_TOKEN || ''
+
 interface DentalinkCitaFull {
   id: number
   id_paciente: number
@@ -23,14 +26,6 @@ interface DentalinkCitaFull {
   fecha_actualizacion: string
 }
 
-interface DentalinkPaciente {
-  id: number
-  nombre: string
-  apellido: string
-  fecha_creacion?: string
-  fecha_ingreso?: string
-}
-
 function esPrimeraVez(comentario: string): boolean {
   const c = (comentario || '').toLowerCase()
   return (
@@ -46,33 +41,6 @@ function esPrimeraVez(comentario: string): boolean {
   )
 }
 
-/**
- * Max ID de citas de los 14 días anteriores (una sola query de rango).
- */
-async function getMaxIdAnterior(fecha: string): Promise<number> {
-  const d = new Date(fecha + 'T12:00:00')
-
-  const yesterday = new Date(d)
-  yesterday.setDate(yesterday.getDate() - 1)
-  const yesterdayStr = yesterday.toISOString().split('T')[0]
-
-  const twoWeeksAgo = new Date(d)
-  twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14)
-  const twoWeeksAgoStr = twoWeeksAgo.toISOString().split('T')[0]
-
-  const citas = await fetchPaginado<DentalinkCitaFull>('/citas', {
-    fecha_actualizacion: [
-      { gte: `${twoWeeksAgoStr} 00:00:00` },
-      { lte: `${yesterdayStr} 23:59:59` },
-    ],
-  })
-
-  if (citas.length > 0) {
-    return Math.max(...citas.map(c => c.id))
-  }
-  return 0
-}
-
 function detectarOrigen(comentario: string): string {
   const c = (comentario || '').toLowerCase()
   if (c.includes('ig') || c.includes('instagram')) return 'Instagram'
@@ -80,6 +48,53 @@ function detectarOrigen(comentario: string): string {
   if (c.includes('wp') || c.includes('whatsapp')) return 'WhatsApp'
   if (c.includes('tel') || c.includes('llamad')) return 'Teléfono'
   return 'Otro'
+}
+
+/**
+ * Consulta un paciente individual en Dentalink para obtener su fecha de creación.
+ * Devuelve el objeto completo del paciente o null si falla.
+ */
+async function fetchPaciente(idPaciente: number): Promise<Record<string, unknown> | null> {
+  try {
+    const res = await fetch(`${API_BASE}/pacientes/${idPaciente}`, {
+      headers: {
+        'Authorization': `Token ${API_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+    })
+    if (!res.ok) return null
+    const json = await res.json()
+    // Dentalink puede devolver { data: {...} } o directamente el objeto
+    return json.data || json
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Extrae la fecha (YYYY-MM-DD) de creación de un paciente.
+ * Prueba varios campos posibles que Dentalink podría usar.
+ */
+function getFechaCreacionPaciente(paciente: Record<string, unknown>): string {
+  // Probar los campos más comunes
+  const campos = [
+    'fecha_creacion',
+    'fecha_ingreso',
+    'created_at',
+    'fecha_registro',
+    'fecha_alta',
+    'creacion',
+  ]
+
+  for (const campo of campos) {
+    const valor = paciente[campo]
+    if (valor && typeof valor === 'string') {
+      // Puede venir como "2026-03-28 10:30:00" o "2026-03-28"
+      return valor.split(' ')[0].split('T')[0]
+    }
+  }
+
+  return ''
 }
 
 export async function GET(request: Request) {
@@ -106,10 +121,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    // 1. Obtener max ID de los 14 días anteriores (baseline)
-    const maxIdAnterior = await getMaxIdAnterior(fecha)
-
-    // 2. Traer citas actualizadas en la fecha seleccionada
+    // 1. Traer citas actualizadas en la fecha seleccionada
     const citasHoy = await fetchPaginado<DentalinkCitaFull>('/citas', {
       fecha_actualizacion: [
         { gte: `${fecha} 00:00:00` },
@@ -117,54 +129,61 @@ export async function GET(request: Request) {
       ],
     })
 
-    // 3. Filtrar por ID (solo citas creadas recientemente)
-    const citasPorId = maxIdAnterior > 0
-      ? citasHoy.filter(c => c.id > maxIdAnterior)
-      : citasHoy
+    // 2. Filtrar solo "primera vez" por comentario
+    const citasPrimeraVez = citasHoy.filter(c => esPrimeraVez(c.comentarios))
 
-    // 4. Filtrar solo "primera vez" por comentario
-    const citasPrimeraVez = citasPorId.filter(c => esPrimeraVez(c.comentarios))
+    // 3. Para cada cita "primera vez", consultar el paciente en Dentalink
+    //    y verificar que fue creado el mismo día (fecha seleccionada)
+    let metodo = 'primera_vez_only'
+    let campoFechaDetectado = ''
+    const debugPacientes: Record<number, unknown> = {}
 
-    // 5. Cruzar con pacientes creados HOY en Dentalink (filtro más preciso)
-    let citasNuevas = citasPrimeraVez
-    let metodo = 'id+primera_vez'
+    // Consultar pacientes (con rate limiting)
+    const citasConPaciente: (DentalinkCitaFull & { paciente_creado_hoy: boolean })[] = []
 
-    try {
-      const pacientesNuevos = await fetchPaginado<DentalinkPaciente>('/pacientes', {
-        fecha_creacion: [
-          { gte: `${fecha} 00:00:00` },
-          { lte: `${fecha} 23:59:59` },
-        ],
-      })
+    for (const cita of citasPrimeraVez) {
+      const paciente = await fetchPaciente(cita.id_paciente)
 
-      if (pacientesNuevos.length > 0) {
-        const idsPacientesHoy = new Set(pacientesNuevos.map(p => p.id))
-        const filtradas = citasPrimeraVez.filter(c => idsPacientesHoy.has(c.id_paciente))
-        if (filtradas.length > 0) {
-          citasNuevas = filtradas
-          metodo = 'id+primera_vez+pacientes'
-        }
-      }
-    } catch {
-      try {
-        const pacientesNuevos = await fetchPaginado<DentalinkPaciente>('/pacientes', {
-          fecha_ingreso: [
-            { gte: `${fecha} 00:00:00` },
-            { lte: `${fecha} 23:59:59` },
-          ],
-        })
+      if (paciente) {
+        const fechaCreacion = getFechaCreacionPaciente(paciente)
 
-        if (pacientesNuevos.length > 0) {
-          const idsPacientesHoy = new Set(pacientesNuevos.map(p => p.id))
-          const filtradas = citasPrimeraVez.filter(c => idsPacientesHoy.has(c.id_paciente))
-          if (filtradas.length > 0) {
-            citasNuevas = filtradas
-            metodo = 'id+primera_vez+ingreso'
+        // Debug: guardar info del primer paciente para ver estructura
+        if (Object.keys(debugPacientes).length < 2) {
+          debugPacientes[cita.id_paciente] = {
+            campos_fecha: Object.keys(paciente).filter(k =>
+              k.includes('fecha') || k.includes('date') || k.includes('creat') || k.includes('ingres')
+            ),
+            fecha_detectada: fechaCreacion,
+            todos_los_campos: Object.keys(paciente),
           }
         }
-      } catch {
-        // Pacientes no disponible, queda id+primera_vez
+
+        if (fechaCreacion) {
+          campoFechaDetectado = fechaCreacion
+          citasConPaciente.push({ ...cita, paciente_creado_hoy: fechaCreacion === fecha })
+        } else {
+          // No se encontró campo de fecha, incluir por las dudas
+          citasConPaciente.push({ ...cita, paciente_creado_hoy: true })
+        }
+      } else {
+        // No se pudo consultar paciente, incluir por las dudas
+        citasConPaciente.push({ ...cita, paciente_creado_hoy: true })
       }
+
+      // Rate limiting entre consultas
+      await new Promise(r => setTimeout(r, 200))
+    }
+
+    // Si pudimos detectar fechas, filtrar solo los creados hoy
+    const hayFechas = citasConPaciente.some(c => campoFechaDetectado !== '')
+    let citasNuevas: DentalinkCitaFull[]
+
+    if (hayFechas) {
+      citasNuevas = citasConPaciente.filter(c => c.paciente_creado_hoy)
+      metodo = 'primera_vez+fecha_paciente'
+    } else {
+      citasNuevas = citasPrimeraVez
+      metodo = 'primera_vez_only'
     }
 
     const agendados = citasNuevas.map(c => ({
@@ -193,10 +212,9 @@ export async function GET(request: Request) {
       fecha,
       total: agendados.length,
       total_modificados: citasHoy.length,
-      total_por_id: citasPorId.length,
       total_primera_vez: citasPrimeraVez.length,
-      max_id_anterior: maxIdAnterior,
       metodo,
+      debug_pacientes: debugPacientes,
       por_sede: porSede,
       por_origen: porOrigen,
       agendados,
