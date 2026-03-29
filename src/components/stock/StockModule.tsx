@@ -127,22 +127,43 @@ export default function StockModule() {
 
   return (
     <div>
-      {/* Action buttons */}
-      <div className="flex flex-wrap items-center gap-2 mb-6">
-        {canManage && (
+      {/* Header: actions + filters */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-6">
+        <div className="flex flex-wrap items-center gap-2">
+          {canManage && (
+            <button
+              onClick={() => openModal('entrada')}
+              className="flex items-center gap-2 px-4 py-2 bg-green-primary text-white rounded-lg text-sm font-medium hover:bg-green-dark transition-colors"
+            >
+              <Plus size={16} /> Entrada
+            </button>
+          )}
           <button
-            onClick={() => openModal('entrada')}
-            className="flex items-center gap-2 px-4 py-2 bg-green-primary text-white rounded-lg text-sm font-medium hover:bg-green-dark transition-colors"
+            onClick={() => openModal('salida')}
+            className="flex items-center gap-2 px-4 py-2 bg-red text-white rounded-lg text-sm font-medium hover:opacity-90 transition-colors"
           >
-            <Plus size={16} /> Entrada
+            <Minus size={16} /> Salida
           </button>
-        )}
-        <button
-          onClick={() => openModal('salida')}
-          className="flex items-center gap-2 px-4 py-2 bg-red text-white rounded-lg text-sm font-medium hover:opacity-90 transition-colors"
-        >
-          <Minus size={16} /> Salida
-        </button>
+        </div>
+        <div className="flex items-center gap-2 sm:ml-auto">
+          <Filter size={14} className="text-text-muted" />
+          <select
+            value={sedeFilter}
+            onChange={e => setSedeFilter(e.target.value)}
+            className="text-sm border border-border rounded-lg px-3 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-green-primary"
+          >
+            <option value="todas">Todas las sedes</option>
+            {sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+          </select>
+          <select
+            value={productoFilter}
+            onChange={e => setProductoFilter(e.target.value)}
+            className="text-sm border border-border rounded-lg px-3 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-green-primary"
+          >
+            <option value="todos">Todos los productos</option>
+            {productos.map(p => <option key={p.id} value={p.id}>{prodLabel(p)}</option>)}
+          </select>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -276,27 +297,8 @@ function StockResumen({
         </div>
       )}
 
-      {/* Filters + search */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2">
-          <Filter size={14} className="text-text-muted" />
-          <select
-            value={sedeFilter}
-            onChange={e => setSedeFilter(e.target.value)}
-            className="text-sm border border-border rounded-lg px-3 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-green-primary"
-          >
-            <option value="todas">Todas las sedes</option>
-            {sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
-          </select>
-        </div>
-        <select
-          value={productoFilter}
-          onChange={e => setProductoFilter(e.target.value)}
-          className="text-sm border border-border rounded-lg px-3 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-green-primary"
-        >
-          <option value="todos">Todos los productos</option>
-          {productos.map(p => <option key={p.id} value={p.id}>{prodLabel(p)}</option>)}
-        </select>
+      {/* Search */}
+      <div className="flex items-center gap-3">
         <div className="relative ml-auto">
           <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted" />
           <input
@@ -409,29 +411,6 @@ function MovimientosView({
 
   return (
     <div className="space-y-4">
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2">
-          <Filter size={14} className="text-text-muted" />
-          <select
-            value={sedeFilter}
-            onChange={e => setSedeFilter(e.target.value)}
-            className="text-sm border border-border rounded-lg px-3 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-green-primary"
-          >
-            <option value="todas">Todas las sedes</option>
-            {sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
-          </select>
-        </div>
-        <select
-          value={productoFilter}
-          onChange={e => setProductoFilter(e.target.value)}
-          className="text-sm border border-border rounded-lg px-3 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-green-primary"
-        >
-          <option value="todos">Todos los productos</option>
-          {productos.map(p => <option key={p.id} value={p.id}>{prodLabel(p)}</option>)}
-        </select>
-      </div>
-
       {/* Table */}
       <div className="bg-surface rounded-xl border border-border overflow-hidden">
         <div className="overflow-x-auto">

@@ -236,18 +236,31 @@ export default function LaboratorioClient() {
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
           <h1 className="font-display text-2xl font-semibold text-text-primary mb-1">Laboratorio</h1>
           <p className="text-sm text-text-secondary">Seguimiento de coronas y prótesis</p>
         </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-2 px-4 py-2.5 bg-green-primary text-white rounded-lg text-sm font-medium hover:bg-green-600 transition-colors"
-        >
-          <Plus size={16} />
-          Nuevo caso
-        </button>
+        <div className="flex items-center gap-3">
+          <Filter size={14} className="text-text-muted" />
+          <select
+            value={filtroSede}
+            onChange={e => setFiltroSede(e.target.value)}
+            className="text-sm border border-border rounded-lg px-3 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-green-primary"
+          >
+            <option value="todas">Todas las sedes</option>
+            {sedes.map(s => (
+              <option key={s.id} value={s.id}>{s.nombre}</option>
+            ))}
+          </select>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-green-primary text-white rounded-lg text-sm font-medium hover:bg-green-600 transition-colors"
+          >
+            <Plus size={16} />
+            Nuevo caso
+          </button>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -273,22 +286,8 @@ export default function LaboratorioClient() {
         })}
       </div>
 
-      {/* Filters */}
+      {/* Active filters info */}
       <div className="flex items-center gap-3 mb-4">
-        <div className="flex items-center gap-2 text-sm text-text-secondary">
-          <Filter size={14} />
-          Sede:
-        </div>
-        <select
-          value={filtroSede}
-          onChange={e => setFiltroSede(e.target.value)}
-          className="px-3 py-1.5 border border-border rounded-lg text-sm bg-white focus:ring-2 focus:ring-green-primary/20 focus:border-green-primary outline-none"
-        >
-          <option value="todas">Todas</option>
-          {sedes.map(s => (
-            <option key={s.id} value={s.id}>{s.nombre}</option>
-          ))}
-        </select>
         {filtroEstado !== 'todos' && (
           <button
             onClick={() => setFiltroEstado('todos')}

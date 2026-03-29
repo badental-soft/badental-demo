@@ -225,19 +225,22 @@ function ResumenTab() {
 
   return (
     <div>
-      {/* Sede filter */}
-      <div className="flex items-center gap-2 mb-4">
-        <Filter size={14} className="text-text-muted" />
-        <select
-          value={sedeFilter}
-          onChange={(e) => setSedeFilter(e.target.value)}
-          className="text-sm border border-border rounded-lg px-3 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-green-primary"
-        >
-          <option value="todas">Todas las sedes</option>
-          {sedes.map(s => (
-            <option key={s.id} value={s.id}>{s.nombre}</option>
-          ))}
-        </select>
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-6">
+        <span className="text-sm text-text-secondary">Resumen financiero del mes</span>
+        <div className="flex items-center gap-2 sm:ml-auto">
+          <Filter size={14} className="text-text-muted" />
+          <select
+            value={sedeFilter}
+            onChange={(e) => setSedeFilter(e.target.value)}
+            className="text-sm border border-border rounded-lg px-3 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-green-primary"
+          >
+            <option value="todas">Todas las sedes</option>
+            {sedes.map(s => (
+              <option key={s.id} value={s.id}>{s.nombre}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* KPI Cards */}

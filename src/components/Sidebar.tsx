@@ -41,6 +41,7 @@ const employeeNavItems: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard', icon: <LayoutDashboard size={20} />, roles: ['rolA', 'rolB', 'rolC'] },
   { label: 'Turnos', href: '/turnos', icon: <CalendarDays size={20} />, roles: ['rolA', 'rolB', 'rolC'] },
   { label: 'Stock', href: '/stock', icon: <Package size={20} />, roles: ['rolB'] },
+  { label: 'Laboratorio', href: '/laboratorio', icon: <FlaskConical size={20} />, roles: ['rolB', 'rolC'] },
   { label: 'Tareas', href: '/tareas', icon: <CheckSquare size={20} />, roles: ['rolA', 'rolB', 'rolC'] },
   { label: 'Horas', href: '/horas', icon: <Timer size={20} />, roles: ['rolA'] },
 ]
