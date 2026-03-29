@@ -430,13 +430,15 @@ function CobranzasTab() {
     return d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })
   }
 
-  // Client-side sede filter: include general (empty sede_ids) + matching entries
+  // Client-side sede filter
   const cobranzasFiltradas = sedeFilter === 'todas'
     ? cobranzas
     : cobranzas.filter(c => {
         const ids = c.sede_ids || []
-        if (ids.length === 0) return !c.sede_id || c.sede_id === sedeFilter
-        return ids.includes(sedeFilter)
+        if (ids.length > 0) return ids.includes(sedeFilter)
+        if (c.sede_id) return c.sede_id === sedeFilter
+        // General (sin sede): mostrar en todas
+        return true
       })
 
   const totalCobrado = cobranzasFiltradas.reduce((s, c) => s + Number(c.monto), 0)
@@ -445,20 +447,25 @@ function CobranzasTab() {
     porTipo[c.tipo_pago] = (porTipo[c.tipo_pago] || 0) + Number(c.monto)
   })
 
-  // Per-sede totals (proporcional) — same logic as gastos
+  // Per-sede totals (proporcional)
   const porSedeCobranza: Record<string, number> = {}
   cobranzas.forEach(c => {
     const monto = Number(c.monto)
     const ids = c.sede_ids || []
-    if (ids.length === 0) {
-      // General: dividir entre todas las sedes
-      sedes.forEach(s => {
-        porSedeCobranza[s.id] = (porSedeCobranza[s.id] || 0) + monto / sedes.length
-      })
-    } else {
-      // Dividir entre las sedes seleccionadas
+    if (ids.length > 1) {
+      // Multi-sede: dividir proporcionalmente
       ids.forEach((sid: string) => {
         porSedeCobranza[sid] = (porSedeCobranza[sid] || 0) + monto / ids.length
+      })
+    } else if (ids.length === 1) {
+      porSedeCobranza[ids[0]] = (porSedeCobranza[ids[0]] || 0) + monto
+    } else if (c.sede_id) {
+      // Dentalink o entrada vieja con sede_id: sumar directo a esa sede
+      porSedeCobranza[c.sede_id] = (porSedeCobranza[c.sede_id] || 0) + monto
+    } else {
+      // General (sin sede_id ni sede_ids): dividir entre todas
+      sedes.forEach(s => {
+        porSedeCobranza[s.id] = (porSedeCobranza[s.id] || 0) + monto / sedes.length
       })
     }
   })
