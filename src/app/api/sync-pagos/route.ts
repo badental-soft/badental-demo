@@ -95,7 +95,7 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({
-      message: 'Sincronización de pagos completada',
+      message: `${inserted} pagos sincronizados`,
       rango: `${fechaDesde} → ${fechaHasta}`,
       total_dentalink: pagos.length,
       insertados: inserted,

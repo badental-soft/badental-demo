@@ -101,7 +101,7 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({
-      message: `Sincronización completada`,
+      message: `${inserted} turnos sincronizados`,
       rango: `${fechaDesde} → ${fechaHasta}`,
       total_dentalink: citas.length,
       insertados: inserted,

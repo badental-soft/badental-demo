@@ -33,8 +33,7 @@ export default function SyncButton({ label = 'Sync Dentalink', endpoints, onDone
         if (r.error) {
           messages.push(`Error: ${r.error}`)
         } else {
-          if (r.insertados != null) messages.push(`${r.insertados} turnos`)
-          if (r.insertados_pagos != null || r.pagos_insertados != null) messages.push(`${r.insertados_pagos || r.pagos_insertados || 0} pagos`)
+          if (r.message) messages.push(r.message)
           if (r.rango) messages.push(r.rango)
         }
       })
