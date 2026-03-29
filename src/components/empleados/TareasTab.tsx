@@ -38,10 +38,26 @@ interface UserProfile {
 }
 
 const CATEGORIA_STYLES: Record<string, { bg: string; text: string }> = {
+  // Rol A
   agenda: { bg: 'bg-blue-light', text: 'text-blue' },
   mensajes: { bg: 'bg-green-light', text: 'text-green-primary' },
   visto: { bg: 'bg-amber-light', text: 'text-amber' },
   cierre: { bg: 'bg-red-light', text: 'text-red' },
+  // Rol B
+  consulta: { bg: 'bg-blue-light', text: 'text-blue' },
+  venta: { bg: 'bg-green-light', text: 'text-green-primary' },
+  registro: { bg: 'bg-amber-light', text: 'text-amber' },
+  seguimiento: { bg: 'bg-purple-50', text: 'text-purple-600' },
+  // Rol C
+  recepcion: { bg: 'bg-blue-light', text: 'text-blue' },
+  clinico: { bg: 'bg-green-light', text: 'text-green-primary' },
+  admin: { bg: 'bg-gray-100', text: 'text-gray-600' },
+}
+
+const ROL_LABELS: Record<string, string> = {
+  rolA: 'Rol A — Recepcionista digital',
+  rolB: 'Rol B — Vendedor',
+  rolC: 'Rol C — Recepcionista físico',
 }
 
 export default function TareasTab({ isAdmin }: { isAdmin: boolean }) {
@@ -55,16 +71,23 @@ export default function TareasTab({ isAdmin }: { isAdmin: boolean }) {
   const [loading, setLoading] = useState(true)
   const [pendientesAyer, setPendientesAyer] = useState<number[]>([])
 
-  // Fetch task templates
+  // Fetch task templates (filtered by user's rol, or all for admin)
   const fetchPlantillas = useCallback(async () => {
-    const { data } = await supabase
+    let query = supabase
       .from('tarea_plantillas')
       .select('*')
       .eq('activa', true)
       .order('orden')
+
+    // Non-admin: only their rol's tasks
+    if (!isAdmin && user?.rol) {
+      query = query.eq('rol', user.rol)
+    }
+
+    const { data } = await query
     if (data) setPlantillas(data)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [isAdmin, user?.rol])
 
   // Fetch employees (admin only)
   const fetchEmpleados = useCallback(async () => {
@@ -183,8 +206,17 @@ export default function TareasTab({ isAdmin }: { isAdmin: boolean }) {
   }
 
   const isToday = fecha === getArgentinaToday()
-  const completadasCount = completadas.filter(c => c.completada).length
-  const totalTareas = plantillas.length
+
+  // Filter plantillas by the selected employee's rol (admin detail view)
+  const selectedRol = isAdmin
+    ? empleados.find(e => e.id === selectedEmpleado)?.rol || ''
+    : user?.rol || ''
+  const plantillasFiltradas = selectedRol
+    ? plantillas.filter(p => p.rol === selectedRol)
+    : plantillas
+
+  const completadasCount = completadas.filter(c => c.completada && plantillasFiltradas.some(p => p.id === c.plantilla_id)).length
+  const totalTareas = plantillasFiltradas.length
 
   const formatFecha = (f: string) => {
     const d = new Date(f + 'T12:00:00')
@@ -254,42 +286,54 @@ export default function TareasTab({ isAdmin }: { isAdmin: boolean }) {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {empleados.filter(e => e.rol === 'rolA').map(emp => {
-              const empCompletadas = allCompletadas[emp.id] || []
-              const done = empCompletadas.length
-              const pct = totalTareas > 0 ? Math.round((done / totalTareas) * 100) : 0
+          <div className="space-y-6">
+            {['rolA', 'rolB', 'rolC'].map(rol => {
+              const empsDelRol = empleados.filter(e => e.rol === rol)
+              if (empsDelRol.length === 0) return null
+              const plantillasDelRol = plantillas.filter(p => p.rol === rol)
+              const totalRol = plantillasDelRol.length
 
               return (
-                <button
-                  key={emp.id}
-                  onClick={() => { setSelectedEmpleado(emp.id); setOverviewMode(false) }}
-                  className="bg-surface rounded-xl border border-border p-5 text-left hover:border-green-primary transition-colors"
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-semibold text-text-primary">{emp.nombre}</h3>
-                    <span className={`text-sm font-semibold ${pct === 100 ? 'text-green-primary' : pct > 0 ? 'text-amber' : 'text-text-muted'}`}>
-                      {done}/{totalTareas}
-                    </span>
+                <div key={rol}>
+                  <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-3">
+                    {ROL_LABELS[rol] || rol} ({empsDelRol.length})
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {empsDelRol.map(emp => {
+                      const empCompletadas = allCompletadas[emp.id] || []
+                      // Count only completions for this rol's templates
+                      const plantillaIds = plantillasDelRol.map(p => p.id)
+                      const done = empCompletadas.filter(c => plantillaIds.includes(c.plantilla_id)).length
+                      const pct = totalRol > 0 ? Math.round((done / totalRol) * 100) : 0
+
+                      return (
+                        <button
+                          key={emp.id}
+                          onClick={() => { setSelectedEmpleado(emp.id); setOverviewMode(false) }}
+                          className="bg-surface rounded-xl border border-border p-5 text-left hover:border-green-primary transition-colors"
+                        >
+                          <div className="flex items-center justify-between mb-3">
+                            <h3 className="font-semibold text-text-primary">{emp.nombre}</h3>
+                            <span className={`text-sm font-semibold ${pct === 100 ? 'text-green-primary' : pct > 0 ? 'text-amber' : 'text-text-muted'}`}>
+                              {done}/{totalRol}
+                            </span>
+                          </div>
+                          <div className="w-full h-2 bg-beige rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all ${pct === 100 ? 'bg-green-primary' : 'bg-amber'}`}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <p className="text-xs text-text-muted mt-2">
+                            {pct === 100 ? 'Todas completadas' : pct === 0 ? 'Sin comenzar' : `${pct}% completado`}
+                          </p>
+                        </button>
+                      )
+                    })}
                   </div>
-                  {/* Progress bar */}
-                  <div className="w-full h-2 bg-beige rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all ${pct === 100 ? 'bg-green-primary' : 'bg-amber'}`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                  <p className="text-xs text-text-muted mt-2">
-                    {pct === 100 ? 'Todas completadas' : pct === 0 ? 'Sin comenzar' : `${pct}% completado`}
-                  </p>
-                </button>
+                </div>
               )
             })}
-            {empleados.filter(e => e.rol !== 'rolA').length > 0 && (
-              <p className="col-span-full text-xs text-text-muted mt-2">
-                Solo se muestran empleados con Rol A. Los demás roles aún no tienen tareas asignadas.
-              </p>
-            )}
           </div>
         )}
       </div>
@@ -340,8 +384,8 @@ export default function TareasTab({ isAdmin }: { isAdmin: boolean }) {
               onChange={(e) => setSelectedEmpleado(e.target.value)}
               className="text-sm border border-border rounded-lg px-3 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-green-primary"
             >
-              {empleados.filter(e => e.rol === 'rolA').map(e => (
-                <option key={e.id} value={e.id}>{e.nombre}</option>
+              {empleados.map(e => (
+                <option key={e.id} value={e.id}>{e.nombre} ({e.rol})</option>
               ))}
             </select>
           </div>
@@ -369,7 +413,7 @@ export default function TareasTab({ isAdmin }: { isAdmin: boolean }) {
         <div className="text-center text-text-muted py-8 text-sm">Cargando tareas...</div>
       ) : (
         <div className="bg-surface rounded-xl border border-border divide-y divide-border-light">
-          {plantillas.map(p => {
+          {plantillasFiltradas.map(p => {
             const comp = completadas.find(c => c.plantilla_id === p.id)
             const isDone = comp?.completada || false
             const isPendienteAyer = pendientesAyer.includes(p.id) && !isDone && isToday

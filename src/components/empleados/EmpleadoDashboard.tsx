@@ -74,8 +74,14 @@ export default function EmpleadoDashboard() {
       const hoy = getArgentinaToday()
 
       // --- TAREAS ---
+      // Filtrar plantillas por el rol del usuario
+      let plantillasQuery = supabase.from('tarea_plantillas').select('id').eq('activa', true)
+      if (user.rol) {
+        plantillasQuery = plantillasQuery.eq('rol', user.rol)
+      }
+
       const [plantillasRes, completadasRes] = await Promise.all([
-        supabase.from('tarea_plantillas').select('id').eq('activa', true),
+        plantillasQuery,
         supabase.from('tarea_completadas').select('plantilla_id, completada').eq('user_id', user.id).eq('fecha', hoy),
       ])
 
@@ -217,58 +223,62 @@ export default function EmpleadoDashboard() {
         </div>
       </div>
 
-      {/* Row 2: Horas del mes */}
-      <div className="bg-surface rounded-xl border border-border p-5">
-        <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2 mb-4">
-          <Clock size={16} className="text-green-primary" />
-          Horas de {mesActual}
-        </h3>
+      {/* Row 2: Horas del mes (solo Rol A) */}
+      {user?.rol === 'rolA' && (
+        <div className="bg-surface rounded-xl border border-border p-5">
+          <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2 mb-4">
+            <Clock size={16} className="text-green-primary" />
+            Horas de {mesActual}
+          </h3>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
-          <div>
-            <p className="text-xs text-text-muted uppercase tracking-wide mb-1">Total horas</p>
-            <p className="text-2xl font-bold text-text-primary">{horasMes}h</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+            <div>
+              <p className="text-xs text-text-muted uppercase tracking-wide mb-1">Total horas</p>
+              <p className="text-2xl font-bold text-text-primary">{horasMes}h</p>
+            </div>
+            <div>
+              <p className="text-xs text-text-muted uppercase tracking-wide mb-1">Normales</p>
+              <p className="text-2xl font-bold text-text-primary">{horasNormales}h</p>
+            </div>
+            <div>
+              <p className="text-xs text-text-muted uppercase tracking-wide mb-1">Dom/Feriado</p>
+              <p className="text-2xl font-bold text-amber">{horasDobles}h</p>
+            </div>
+            <div>
+              <p className="text-xs text-text-muted uppercase tracking-wide mb-1">Total a cobrar</p>
+              <p className="text-2xl font-bold text-green-primary">${totalPagar.toLocaleString('es-AR')}</p>
+            </div>
           </div>
-          <div>
-            <p className="text-xs text-text-muted uppercase tracking-wide mb-1">Normales</p>
-            <p className="text-2xl font-bold text-text-primary">{horasNormales}h</p>
-          </div>
-          <div>
-            <p className="text-xs text-text-muted uppercase tracking-wide mb-1">Dom/Feriado</p>
-            <p className="text-2xl font-bold text-amber">{horasDobles}h</p>
-          </div>
-          <div>
-            <p className="text-xs text-text-muted uppercase tracking-wide mb-1">Total a cobrar</p>
-            <p className="text-2xl font-bold text-green-primary">${totalPagar.toLocaleString('es-AR')}</p>
+
+          <div className="flex items-center justify-between text-xs text-text-muted border-t border-border-light pt-3">
+            <span>{diasTrabajados} días trabajados · ${horasConfig.hourly_rate.toLocaleString('es-AR')}/h</span>
+            {horasMesAnterior > 0 && (
+              <span className={`flex items-center gap-1 font-medium ${horasDiff >= 0 ? 'text-green-primary' : 'text-red'}`}>
+                <TrendingUp size={12} className={horasDiff < 0 ? 'rotate-180' : ''} />
+                {horasDiff >= 0 ? '+' : ''}{horasDiff}h vs mes anterior
+              </span>
+            )}
           </div>
         </div>
+      )}
 
-        <div className="flex items-center justify-between text-xs text-text-muted border-t border-border-light pt-3">
-          <span>{diasTrabajados} días trabajados · ${horasConfig.hourly_rate.toLocaleString('es-AR')}/h</span>
-          {horasMesAnterior > 0 && (
-            <span className={`flex items-center gap-1 font-medium ${horasDiff >= 0 ? 'text-green-primary' : 'text-red'}`}>
-              <TrendingUp size={12} className={horasDiff < 0 ? 'rotate-180' : ''} />
-              {horasDiff >= 0 ? '+' : ''}{horasDiff}h vs mes anterior
-            </span>
-          )}
+      {/* Row 3: Turnos agendados (solo Rol A) */}
+      {user?.rol === 'rolA' && (
+        <div className="bg-surface rounded-xl border border-border p-5">
+          <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2 mb-3">
+            <CalendarDays size={16} className="text-green-primary" />
+            Turnos agendados
+          </h3>
+          <div className="flex items-center gap-3 text-text-muted">
+            <AlertCircle size={32} className="text-text-muted/50" />
+            <p className="text-sm text-text-secondary">
+              Próximamente vas a poder ver cuántos turnos agendaste hoy y en la semana.
+              <br />
+              <span className="text-xs text-text-muted">Pendiente de integración con Dentalink.</span>
+            </p>
+          </div>
         </div>
-      </div>
-
-      {/* Row 3: Turnos agendados */}
-      <div className="bg-surface rounded-xl border border-border p-5">
-        <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2 mb-3">
-          <CalendarDays size={16} className="text-green-primary" />
-          Turnos agendados
-        </h3>
-        <div className="flex items-center gap-3 text-text-muted">
-          <AlertCircle size={32} className="text-text-muted/50" />
-          <p className="text-sm text-text-secondary">
-            Próximamente vas a poder ver cuántos turnos agendaste hoy y en la semana.
-            <br />
-            <span className="text-xs text-text-muted">Pendiente de integración con Dentalink.</span>
-          </p>
-        </div>
-      </div>
+      )}
     </div>
   )
 }
