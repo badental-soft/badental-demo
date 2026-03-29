@@ -15,6 +15,8 @@ import {
   MapPin,
   AlertCircle,
   Check,
+  Clock,
+  DollarSign,
 } from 'lucide-react'
 import type { UserRole, Sede } from '@/types/database'
 
@@ -259,6 +261,9 @@ export default function ConfiguracionClient() {
           )
         })}
       </div>
+
+      {/* Horas Config */}
+      <HorasConfigSection />
 
       {/* Create Modal */}
       {showCreateModal && (
@@ -617,6 +622,101 @@ function DeleteConfirmModal({ user, onClose, onDelete }: {
         </button>
       </div>
     </ModalOverlay>
+  )
+}
+
+function HorasConfigSection() {
+  const supabase = createClient()
+  const [config, setConfig] = useState({ hourly_rate: 8000, sunday_multiplier: 2 })
+  const [rate, setRate] = useState('8000')
+  const [mult, setMult] = useState('2')
+  const [saving, setSaving] = useState(false)
+
+  const fetchConfig = useCallback(async () => {
+    try {
+      const { data } = await supabase.from('config').select('key, value')
+      if (data) {
+        const rows = data as unknown as { key: string; value: string }[]
+        const cfg: Record<string, string> = {}
+        rows.forEach((d) => { cfg[d.key] = d.value })
+        const c = {
+          hourly_rate: Number(cfg.hourly_rate) || 8000,
+          sunday_multiplier: Number(cfg.sunday_multiplier) || 2,
+        }
+        setConfig(c)
+        setRate(String(c.hourly_rate))
+        setMult(String(c.sunday_multiplier))
+      }
+    } catch (err) {
+      console.error('Error fetching config:', err)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => { fetchConfig() }, [fetchConfig])
+
+  const saveConfig = async (key: string, value: string) => {
+    setSaving(true)
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase.from('config') as any)
+        .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'key' })
+      fetchConfig()
+    } catch (err) {
+      console.error('Error updating config:', err)
+    }
+    setSaving(false)
+  }
+
+  return (
+    <div className="mt-8">
+      <h2 className="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
+        <Clock size={20} />
+        Configuración de Horas
+      </h2>
+      <div className="bg-surface rounded-xl border border-border p-5">
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="flex items-center gap-2">
+            <DollarSign size={16} className="text-text-muted" />
+            <label className="text-sm text-text-secondary">Valor hora ($)</label>
+            <input
+              type="number"
+              value={rate}
+              onChange={(e) => setRate(e.target.value)}
+              min="0"
+              step="100"
+              className="w-28 px-3 py-1.5 text-sm border border-border rounded-lg bg-white text-text-primary focus:outline-none focus:border-green-primary"
+            />
+            <button
+              onClick={() => saveConfig('hourly_rate', rate)}
+              disabled={saving}
+              className="text-xs font-medium px-3 py-1.5 border border-border rounded-lg hover:bg-beige transition-colors disabled:opacity-50"
+            >
+              Guardar
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-text-secondary">Multiplicador dom/fer.</label>
+            <input
+              type="number"
+              value={mult}
+              onChange={(e) => setMult(e.target.value)}
+              min="1"
+              max="3"
+              step="0.5"
+              className="w-28 px-3 py-1.5 text-sm border border-border rounded-lg bg-white text-text-primary focus:outline-none focus:border-green-primary"
+            />
+            <button
+              onClick={() => saveConfig('sunday_multiplier', mult)}
+              disabled={saving}
+              className="text-xs font-medium px-3 py-1.5 border border-border rounded-lg hover:bg-beige transition-colors disabled:opacity-50"
+            >
+              Guardar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 
