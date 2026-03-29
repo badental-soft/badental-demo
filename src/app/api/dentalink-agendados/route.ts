@@ -55,22 +55,35 @@ function detectarOrigen(comentario: string): string {
  * Consulta un paciente individual en Dentalink para obtener su fecha de creación.
  * Devuelve el objeto completo del paciente o null si falla.
  */
-async function fetchPaciente(idPaciente: number): Promise<Record<string, unknown> | null> {
-  try {
-    const res = await fetch(`${API_BASE}/pacientes/${idPaciente}`, {
-      headers: {
-        'Authorization': `Token ${API_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-    })
-    if (!res.ok) return null
-    const json = await res.json()
-    // Dentalink puede devolver { data: {...} } o directamente el objeto
-    return json.data || json
-  } catch {
-    return null
+async function fetchPaciente(idPaciente: number, retries = 2): Promise<Record<string, unknown> | null> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(`${API_BASE}/pacientes/${idPaciente}`, {
+        headers: {
+          'Authorization': `Token ${API_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+      })
+      if (res.status === 429) {
+        // Rate limited — wait and retry
+        await new Promise(r => setTimeout(r, 500 * (attempt + 1)))
+        continue
+      }
+      if (!res.ok) return null
+      const json = await res.json()
+      return json.data || json
+    } catch {
+      if (attempt < retries) {
+        await new Promise(r => setTimeout(r, 300))
+        continue
+      }
+      return null
+    }
   }
+  return null
 }
+
+const delay = (ms: number) => new Promise(r => setTimeout(r, ms))
 
 /**
  * Extrae la fecha (YYYY-MM-DD) de afiliación/alta del paciente en Dentalink.
@@ -122,7 +135,7 @@ export async function GET(request: Request) {
     // 3. Para cada cita "primera vez", consultar fecha_afiliacion del paciente
     //    en paralelo (batches de 10 para no saturar la API)
     const citasConFecha: (DentalinkCitaFull & { fecha_afiliacion: string })[] = []
-    const BATCH_SIZE = 10
+    const BATCH_SIZE = 5
 
     for (let i = 0; i < citasPrimeraVez.length; i += BATCH_SIZE) {
       const batch = citasPrimeraVez.slice(i, i + BATCH_SIZE)
@@ -134,6 +147,10 @@ export async function GET(request: Request) {
         })
       )
       citasConFecha.push(...results)
+      // Delay entre batches para no saturar la API de Dentalink
+      if (i + BATCH_SIZE < citasPrimeraVez.length) {
+        await delay(200)
+      }
     }
 
     // 4. Filtrar: solo pacientes afiliados/dados de alta en la fecha seleccionada

@@ -320,18 +320,18 @@ function AgendadosTab() {
         dias.push(d.toISOString().split('T')[0])
       }
 
-      const results = await Promise.all(
-        dias.map(async (f) => {
-          try {
-            const res = await fetch(`/api/dentalink-agendados?fecha=${f}`)
-            if (!res.ok) return { fecha: f, total: 0 }
-            const json = await res.json()
-            return { fecha: f, total: json.total || 0 }
-          } catch {
-            return { fecha: f, total: 0 }
-          }
-        })
-      )
+      // Secuencial para no saturar la API de Dentalink
+      const results: { fecha: string; total: number }[] = []
+      for (const f of dias) {
+        try {
+          const res = await fetch(`/api/dentalink-agendados?fecha=${f}`)
+          if (!res.ok) { results.push({ fecha: f, total: 0 }); continue }
+          const json = await res.json()
+          results.push({ fecha: f, total: json.total || 0 })
+        } catch {
+          results.push({ fecha: f, total: 0 })
+        }
+      }
       setHistorial(results)
     }
     fetchHistorial()
