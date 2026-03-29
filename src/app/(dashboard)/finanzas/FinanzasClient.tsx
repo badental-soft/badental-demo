@@ -340,9 +340,7 @@ function CobranzasTab() {
       .eq('fecha', fecha)
       .order('created_at', { ascending: false })
 
-    if (sedeFilter !== 'todas') {
-      query = query.eq('sede_id', sedeFilter)
-    }
+    // sede filter applied client-side to include multi-sede entries
 
     if (user?.rol === 'rolC' && user.sede_id) {
       query = query.eq('sede_id', user.sede_id)
@@ -352,7 +350,7 @@ function CobranzasTab() {
     setCobranzas((data as CobranzaConSede[]) || [])
     setLoading(false)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fecha, sedeFilter, user])
+  }, [fecha, user])
 
   useEffect(() => { fetchSedes() }, [fetchSedes])
   useEffect(() => { fetchCobranzas() }, [fetchCobranzas])
@@ -432,11 +430,42 @@ function CobranzasTab() {
     return d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })
   }
 
-  const totalCobrado = cobranzas.reduce((s, c) => s + Number(c.monto), 0)
+  // Client-side sede filter
+  const cobranzasFiltradas = sedeFilter === 'todas'
+    ? cobranzas
+    : cobranzas.filter(c => {
+        const ids = c.sede_ids || []
+        if (ids.length > 0) return ids.includes(sedeFilter)
+        return c.sede_id === sedeFilter
+      })
+
+  const totalCobrado = cobranzasFiltradas.reduce((s, c) => s + Number(c.monto), 0)
   const porTipo: Record<string, number> = {}
-  cobranzas.forEach(c => {
+  cobranzasFiltradas.forEach(c => {
     porTipo[c.tipo_pago] = (porTipo[c.tipo_pago] || 0) + Number(c.monto)
   })
+
+  // Per-sede totals (proporcional)
+  const porSedeCobranza: Record<string, number> = {}
+  cobranzas.forEach(c => {
+    const monto = Number(c.monto)
+    const ids = c.sede_ids || []
+    if (ids.length > 1) {
+      ids.forEach((sid: string) => {
+        porSedeCobranza[sid] = (porSedeCobranza[sid] || 0) + monto / ids.length
+      })
+    } else {
+      const sid = ids[0] || c.sede_id
+      if (sid) porSedeCobranza[sid] = (porSedeCobranza[sid] || 0) + monto
+    }
+  })
+
+  const getCobranzaSedeLabel = (c: CobranzaConSede): string => {
+    const ids = c.sede_ids || []
+    if (ids.length === 0) return c.sedes?.nombre || '\u2014'
+    if (ids.length === 1) return sedes.find(s => s.id === ids[0])?.nombre || '\u2014'
+    return ids.map(id => sedes.find(s => s.id === id)?.nombre || '').filter(Boolean).join(', ')
+  }
 
   return (
     <div>
@@ -711,19 +740,19 @@ function CobranzasTab() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
-        <div className="bg-surface rounded-xl border border-border p-4 col-span-2 md:col-span-1">
+      <div className="flex flex-wrap gap-3 mb-4">
+        <div className="bg-surface rounded-lg border border-border px-4 py-3">
           <div className="flex items-center gap-2 mb-1">
             <DollarSign size={18} className="text-green-primary" />
             <span className="text-xs font-medium text-text-muted uppercase tracking-wide">Total</span>
           </div>
           <p className="text-xl font-semibold text-green-primary">{formatMoney(totalCobrado)}</p>
-          <p className="text-xs text-text-secondary mt-0.5">{cobranzas.length} cobros</p>
+          <p className="text-xs text-text-secondary mt-0.5">{cobranzasFiltradas.length} cobros</p>
         </div>
         {Object.entries(porTipo).sort((a, b) => b[1] - a[1]).map(([tipo, monto]) => {
           const style = TIPO_PAGO_LABELS[tipo] || TIPO_PAGO_LABELS.efectivo
           return (
-            <div key={tipo} className="bg-surface rounded-xl border border-border p-4">
+            <div key={tipo} className="bg-surface rounded-lg border border-border px-4 py-3">
               <div className="flex items-center gap-2 mb-1">
                 <span className={style.text}>{style.icon}</span>
                 <span className="text-xs font-medium text-text-muted uppercase tracking-wide">{style.label}</span>
@@ -734,11 +763,37 @@ function CobranzasTab() {
         })}
       </div>
 
+      {/* Per-sede breakdown */}
+      {cobranzas.length > 0 && sedes.length > 0 && (
+        <div className="bg-surface rounded-xl border border-border p-4 mb-6">
+          <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-3">Cobrado por sede (proporcional)</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            {sedes.map(s => {
+              const total = porSedeCobranza[s.id] || 0
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => setSedeFilter(sedeFilter === s.id ? 'todas' : s.id)}
+                  className={`rounded-lg border px-3 py-2 text-left transition-all ${
+                    sedeFilter === s.id
+                      ? 'bg-green-50 border-green-200 ring-2 ring-green-primary/20'
+                      : 'border-border hover:border-gray-300'
+                  }`}
+                >
+                  <p className="text-xs text-text-muted truncate">{s.nombre}</p>
+                  <p className="text-sm font-semibold text-green-primary">{formatMoney(total)}</p>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       <div className="bg-surface rounded-xl border border-border overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-text-muted text-sm">Cargando cobranzas...</div>
-        ) : cobranzas.length === 0 ? (
+        ) : cobranzasFiltradas.length === 0 ? (
           <div className="p-8 text-center text-text-muted text-sm">
             No hay cobranzas para esta fecha
             {sedeFilter !== 'todas' ? ' en esta sede' : ''}
@@ -750,7 +805,7 @@ function CobranzasTab() {
                 <tr className="border-b border-border bg-beige/50">
                   <th className="text-left px-4 py-3 font-medium text-text-secondary text-xs uppercase tracking-wide">Paciente</th>
                   <th className="text-left px-4 py-3 font-medium text-text-secondary text-xs uppercase tracking-wide hidden md:table-cell">Tratamiento</th>
-                  <th className="text-left px-4 py-3 font-medium text-text-secondary text-xs uppercase tracking-wide hidden sm:table-cell">Sede</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-secondary text-xs uppercase tracking-wide hidden sm:table-cell">Sedes</th>
                   <th className="text-left px-4 py-3 font-medium text-text-secondary text-xs uppercase tracking-wide">Medio</th>
                   <th className="text-right px-4 py-3 font-medium text-text-secondary text-xs uppercase tracking-wide">Monto</th>
                   <th className="text-left px-4 py-3 font-medium text-text-secondary text-xs uppercase tracking-wide hidden lg:table-cell">Notas</th>
@@ -760,9 +815,12 @@ function CobranzasTab() {
                 </tr>
               </thead>
               <tbody>
-                {cobranzas.map((c) => {
+                {cobranzasFiltradas.map((c) => {
                   const style = TIPO_PAGO_LABELS[c.tipo_pago] || TIPO_PAGO_LABELS.efectivo
                   const isDentalink = c.tratamiento === 'Dentalink'
+                  const sedeLabel = getCobranzaSedeLabel(c)
+                  const sedeIds = c.sede_ids || []
+                  const cantSedes = sedeIds.length > 1 ? sedeIds.length : 1
                   return (
                     <tr key={c.id} className="border-b border-border-light hover:bg-beige/30 transition-colors">
                       <td className="px-4 py-3 text-text-primary">
@@ -778,8 +836,13 @@ function CobranzasTab() {
                           c.tratamiento || '\u2014'
                         )}
                       </td>
-                      <td className="px-4 py-3 text-text-secondary hidden sm:table-cell">
-                        {c.sedes?.nombre || '\u2014'}
+                      <td className="px-4 py-3 hidden sm:table-cell">
+                        <span className="text-text-secondary text-xs">{sedeLabel}</span>
+                        {cantSedes > 1 && (
+                          <span className="text-text-muted text-[10px] ml-1">
+                            ({formatMoney(Number(c.monto) / cantSedes)} c/u)
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
@@ -820,9 +883,9 @@ function CobranzasTab() {
         )}
       </div>
 
-      {!loading && cobranzas.length > 0 && (
+      {!loading && cobranzasFiltradas.length > 0 && (
         <p className="text-xs text-text-muted mt-3">
-          {cobranzas.length} cobro{cobranzas.length !== 1 ? 's' : ''} · Total: {formatMoney(totalCobrado)}
+          {cobranzasFiltradas.length} cobro{cobranzasFiltradas.length !== 1 ? 's' : ''} · Total: {formatMoney(totalCobrado)}
         </p>
       )}
     </div>
