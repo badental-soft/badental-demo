@@ -91,21 +91,15 @@ function AdminDashboard() {
       const inicioSemana = getInicioSemana()
       const inicioMes = hoy.slice(0, 7) + '-01'
 
-      // Build all queries
+      // Build all queries — cobranzas/gastos fetch all, filtered client-side for multi-sede
       let turnosQuery = supabase.from('turnos').select('*, sedes(nombre)').eq('fecha', hoy)
       if (sedeFilter !== 'todas') turnosQuery = turnosQuery.eq('sede_id', sedeFilter)
 
-      let cobHoyQuery = supabase.from('cobranzas').select('monto').eq('fecha', hoy)
-      if (sedeFilter !== 'todas') cobHoyQuery = cobHoyQuery.eq('sede_id', sedeFilter)
+      const cobHoyQuery = supabase.from('cobranzas').select('monto, sede_id, sede_ids').eq('fecha', hoy)
+      const cobSemQuery = supabase.from('cobranzas').select('monto, sede_id, sede_ids').gte('fecha', inicioSemana).lte('fecha', hoy)
+      const cobMesQuery = supabase.from('cobranzas').select('monto, sede_id, sede_ids').gte('fecha', inicioMes).lte('fecha', hoy)
 
-      let cobSemQuery = supabase.from('cobranzas').select('monto').gte('fecha', inicioSemana).lte('fecha', hoy)
-      if (sedeFilter !== 'todas') cobSemQuery = cobSemQuery.eq('sede_id', sedeFilter)
-
-      let cobMesQuery = supabase.from('cobranzas').select('monto').gte('fecha', inicioMes).lte('fecha', hoy)
-      if (sedeFilter !== 'todas') cobMesQuery = cobMesQuery.eq('sede_id', sedeFilter)
-
-      let deudasQuery = supabase.from('deudas').select('monto_total, monto_cobrado').in('estado', ['pendiente', 'parcial'])
-      if (sedeFilter !== 'todas') deudasQuery = deudasQuery.eq('sede_id', sedeFilter)
+      const deudasQuery = supabase.from('deudas').select('monto_total, monto_cobrado, sede_id').in('estado', ['pendiente', 'parcial'])
 
       // Tareas: get plantillas (con rol) + completadas for today + all employees with roles
       const plantillasQuery = supabase.from('tarea_plantillas').select('id, rol').eq('activa', true)
@@ -113,15 +107,34 @@ function AdminDashboard() {
       const empleadosQuery = supabase.from('users').select('id, rol').in('rol', ['rolA', 'rolB', 'rolC'])
 
       // Chart: cobranzas + gastos by day this month
-      let chartCobQuery = supabase.from('cobranzas').select('fecha, monto').gte('fecha', inicioMes).lte('fecha', hoy)
-      if (sedeFilter !== 'todas') chartCobQuery = chartCobQuery.eq('sede_id', sedeFilter)
-      let chartGasQuery = supabase.from('gastos').select('fecha, monto').gte('fecha', inicioMes).lte('fecha', hoy)
-      if (sedeFilter !== 'todas') chartGasQuery = chartGasQuery.eq('sede_id', sedeFilter)
+      const chartCobQuery = supabase.from('cobranzas').select('fecha, monto, sede_id, sede_ids').gte('fecha', inicioMes).lte('fecha', hoy)
+      const chartGasQuery = supabase.from('gastos').select('fecha, monto, sede_ids').gte('fecha', inicioMes).lte('fecha', hoy)
+      const sedesQuery = supabase.from('sedes').select('*').eq('activa', true).order('nombre')
 
       // Run ALL queries in parallel
-      const [turnosRes, cobHoyRes, cobSemRes, cobMesRes, deudasRes, plantillasRes, completadasTodayRes, empleadosRes, chartCobRes, chartGasRes] = await Promise.all([
-        turnosQuery, cobHoyQuery, cobSemQuery, cobMesQuery, deudasQuery, plantillasQuery, completadasQuery, empleadosQuery, chartCobQuery, chartGasQuery,
+      const [turnosRes, cobHoyRes, cobSemRes, cobMesRes, deudasRes, plantillasRes, completadasTodayRes, empleadosRes, chartCobRes, chartGasRes, sedesRes] = await Promise.all([
+        turnosQuery, cobHoyQuery, cobSemQuery, cobMesQuery, deudasQuery, plantillasQuery, completadasQuery, empleadosQuery, chartCobQuery, chartGasQuery, sedesQuery,
       ])
+
+      const allSedes = (sedesRes.data || []) as Sede[]
+      if (allSedes.length > 0) setSedes(allSedes)
+      const sedesCount = allSedes.length || 1
+      const cobMonto = (c: { monto: number; sede_id?: string | null; sede_ids?: string[] }): number => {
+        const monto = Number(c.monto)
+        if (sedeFilter === 'todas') return monto
+        const ids = (c as { sede_ids?: string[] }).sede_ids || []
+        if (ids.length > 1) return ids.includes(sedeFilter) ? monto / ids.length : 0
+        if (ids.length === 1) return ids[0] === sedeFilter ? monto : 0
+        if (c.sede_id) return c.sede_id === sedeFilter ? monto : 0
+        return monto / sedesCount
+      }
+      const gasMonto = (g: { monto: number; sede_ids?: string[] }): number => {
+        const monto = Number(g.monto)
+        if (sedeFilter === 'todas') return monto
+        const ids = (g as { sede_ids?: string[] }).sede_ids || []
+        if (ids.length === 0) return monto / sedesCount
+        return ids.includes(sedeFilter) ? monto / ids.length : 0
+      }
 
       // Process turnos
       const turnosHoy = turnosRes.data || []
@@ -147,15 +160,18 @@ function AdminDashboard() {
         setTurnosPorSede(Object.values(porSede).sort((a, b) => b.total - a.total))
       }
 
-      // Process cobranzas
+      // Process cobranzas with proportional sede filtering
       setCobranzaStats({
-        hoy: cobHoyRes.data?.reduce((sum: number, c: { monto: number }) => sum + Number(c.monto), 0) || 0,
-        semana: cobSemRes.data?.reduce((sum: number, c: { monto: number }) => sum + Number(c.monto), 0) || 0,
-        mes: cobMesRes.data?.reduce((sum: number, c: { monto: number }) => sum + Number(c.monto), 0) || 0,
+        hoy: (cobHoyRes.data || []).reduce((sum: number, c: { monto: number; sede_id?: string | null; sede_ids?: string[] }) => sum + cobMonto(c), 0),
+        semana: (cobSemRes.data || []).reduce((sum: number, c: { monto: number; sede_id?: string | null; sede_ids?: string[] }) => sum + cobMonto(c), 0),
+        mes: (cobMesRes.data || []).reduce((sum: number, c: { monto: number; sede_id?: string | null; sede_ids?: string[] }) => sum + cobMonto(c), 0),
       })
 
       // Process deudas
-      const totalDeudas = deudasRes.data?.reduce((sum: number, d: { monto_total: number; monto_cobrado: number }) => sum + (Number(d.monto_total) - Number(d.monto_cobrado)), 0) || 0
+      const deudasData = (deudasRes.data || []) as { monto_total: number; monto_cobrado: number; sede_id?: string }[]
+      const totalDeudas = sedeFilter === 'todas'
+        ? deudasData.reduce((sum, d) => sum + (Number(d.monto_total) - Number(d.monto_cobrado)), 0)
+        : deudasData.filter(d => d.sede_id === sedeFilter).reduce((sum, d) => sum + (Number(d.monto_total) - Number(d.monto_cobrado)), 0)
       setDeudasPendientes(totalDeudas)
 
       // Process tareas: count pending per employee (only their rol's plantillas)
@@ -172,14 +188,16 @@ function AdminDashboard() {
       })
       setTareasPendientes(pendientes)
 
-      // Process chart data
+      // Process chart data with proportional sede filtering
       const cobByDay: Record<string, number> = {}
       const gasByDay: Record<string, number> = {}
-      ;(chartCobRes.data || []).forEach((c: { fecha: string; monto: number }) => {
-        cobByDay[c.fecha] = (cobByDay[c.fecha] || 0) + Number(c.monto)
+      ;(chartCobRes.data || []).forEach((c: { fecha: string; monto: number; sede_id?: string | null; sede_ids?: string[] }) => {
+        const m = cobMonto(c)
+        if (m > 0) cobByDay[c.fecha] = (cobByDay[c.fecha] || 0) + m
       })
-      ;(chartGasRes.data || []).forEach((g: { fecha: string; monto: number }) => {
-        gasByDay[g.fecha] = (gasByDay[g.fecha] || 0) + Number(g.monto)
+      ;(chartGasRes.data || []).forEach((g: { fecha: string; monto: number; sede_ids?: string[] }) => {
+        const m = gasMonto(g)
+        if (m > 0) gasByDay[g.fecha] = (gasByDay[g.fecha] || 0) + m
       })
       const allDays = new Set([...Object.keys(cobByDay), ...Object.keys(gasByDay)])
       const sorted = Array.from(allDays).sort()

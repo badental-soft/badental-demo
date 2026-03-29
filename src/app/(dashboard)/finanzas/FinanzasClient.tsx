@@ -107,15 +107,23 @@ export default function FinanzasPage() {
 function ResumenTab() {
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
+  const [sedes, setSedes] = useState<Sede[]>([])
+  const [sedeFilter, setSedeFilter] = useState<string>('todas')
   const [cobradoMes, setCobradoMes] = useState(0)
   const [cobradoHoy, setCobradoHoy] = useState(0)
   const [gastosMesPagado, setGastosMesPagado] = useState(0)
   const [gastosMesPendiente, setGastosMesPendiente] = useState(0)
   const [deudasPendientes, setDeudasPendientes] = useState(0)
-  const [proximosVencimientos, setProximosVencimientos] = useState<{ id: string; concepto: string; monto: number; fecha_vencimiento: string; categoria: string }[]>([])
+  const [proximosVencimientos, setProximosVencimientos] = useState<{ id: string; concepto: string; monto: number; fecha_vencimiento: string; categoria: string; sede_ids?: string[] }[]>([])
 
   const hoy = getArgentinaToday()
   const mesActual = hoy.slice(0, 7)
+
+  const fetchSedes = useCallback(async () => {
+    const { data } = await supabase.from('sedes').select('*').eq('activa', true).order('nombre')
+    if (data) setSedes(data)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const fetchResumen = useCallback(async () => {
     setLoading(true)
@@ -125,32 +133,78 @@ function ResumenTab() {
       const lastDay = new Date(y, m, 0).getDate()
       const finMes = `${mesActual}-${String(lastDay).padStart(2, '0')}`
 
-      const [cobMesRes, cobHoyRes, gastosMesRes, deudasRes, vencimientosRes] = await Promise.all([
-        supabase.from('cobranzas').select('monto').gte('fecha', inicioMes).lte('fecha', finMes),
-        supabase.from('cobranzas').select('monto').eq('fecha', hoy),
-        supabase.from('gastos').select('monto, estado').gte('fecha', inicioMes).lte('fecha', finMes),
-        supabase.from('deudas').select('monto_total, monto_cobrado').in('estado', ['pendiente', 'parcial']),
-        supabase.from('gastos').select('id, concepto, monto, fecha_vencimiento, categoria').eq('estado', 'pendiente').not('fecha_vencimiento', 'is', null).gte('fecha_vencimiento', hoy).order('fecha_vencimiento', { ascending: true }).limit(5),
+      const [cobMesRes, cobHoyRes, gastosMesRes, deudasRes, vencimientosRes, sedesRes] = await Promise.all([
+        supabase.from('cobranzas').select('monto, sede_id, sede_ids').gte('fecha', inicioMes).lte('fecha', finMes),
+        supabase.from('cobranzas').select('monto, sede_id, sede_ids').eq('fecha', hoy),
+        supabase.from('gastos').select('monto, estado, sede_ids').gte('fecha', inicioMes).lte('fecha', finMes),
+        supabase.from('deudas').select('monto_total, monto_cobrado, sede_id').in('estado', ['pendiente', 'parcial']),
+        supabase.from('gastos').select('id, concepto, monto, fecha_vencimiento, categoria, sede_ids').eq('estado', 'pendiente').not('fecha_vencimiento', 'is', null).gte('fecha_vencimiento', hoy).order('fecha_vencimiento', { ascending: true }).limit(10),
+        supabase.from('sedes').select('*').eq('activa', true).order('nombre'),
       ])
 
-      setCobradoMes(cobMesRes.data?.reduce((s: number, c: { monto: number }) => s + Number(c.monto), 0) || 0)
-      setCobradoHoy(cobHoyRes.data?.reduce((s: number, c: { monto: number }) => s + Number(c.monto), 0) || 0)
+      const allSedes = (sedesRes.data || []) as Sede[]
+      if (allSedes.length > 0) setSedes(allSedes)
+      const sedesCount = allSedes.length || 1
 
-      const gastosData = gastosMesRes.data || []
-      setGastosMesPagado(gastosData.filter((g: { estado: string }) => g.estado === 'pagado').reduce((s: number, g: { monto: number }) => s + Number(g.monto), 0))
-      setGastosMesPendiente(gastosData.filter((g: { estado: string }) => g.estado === 'pendiente').reduce((s: number, g: { monto: number }) => s + Number(g.monto), 0))
+      // Helper: calculate proportional monto for cobranza given sede filter
+      const cobMonto = (c: { monto: number; sede_id?: string | null; sede_ids?: string[] }, filter: string): number => {
+        const monto = Number(c.monto)
+        if (filter === 'todas') return monto
+        const ids = c.sede_ids || []
+        if (ids.length > 1) {
+          return ids.includes(filter) ? monto / ids.length : 0
+        } else if (ids.length === 1) {
+          return ids[0] === filter ? monto : 0
+        } else if (c.sede_id) {
+          return c.sede_id === filter ? monto : 0
+        }
+        // General: proportional
+        return monto / sedesCount
+      }
 
-      setDeudasPendientes(deudasRes.data?.reduce((s: number, d: { monto_total: number; monto_cobrado: number }) => s + (Number(d.monto_total) - Number(d.monto_cobrado)), 0) || 0)
+      // Helper: calculate proportional monto for gasto given sede filter
+      const gasMonto = (g: { monto: number; sede_ids?: string[] }, filter: string): number => {
+        const monto = Number(g.monto)
+        if (filter === 'todas') return monto
+        const ids = g.sede_ids || []
+        if (ids.length === 0) return monto / sedesCount
+        return ids.includes(filter) ? monto / ids.length : 0
+      }
 
-      setProximosVencimientos((vencimientosRes.data as { id: string; concepto: string; monto: number; fecha_vencimiento: string; categoria: string }[]) || [])
+      const sf = sedeFilter
+
+      setCobradoMes((cobMesRes.data || []).reduce((s: number, c: { monto: number; sede_id?: string | null; sede_ids?: string[] }) => s + cobMonto(c, sf), 0))
+      setCobradoHoy((cobHoyRes.data || []).reduce((s: number, c: { monto: number; sede_id?: string | null; sede_ids?: string[] }) => s + cobMonto(c, sf), 0))
+
+      const gastosData = (gastosMesRes.data || []) as { monto: number; estado: string; sede_ids?: string[] }[]
+      setGastosMesPagado(gastosData.filter(g => g.estado === 'pagado').reduce((s, g) => s + gasMonto(g, sf), 0))
+      setGastosMesPendiente(gastosData.filter(g => g.estado === 'pendiente').reduce((s, g) => s + gasMonto(g, sf), 0))
+
+      if (sf === 'todas') {
+        setDeudasPendientes((deudasRes.data || []).reduce((s: number, d: { monto_total: number; monto_cobrado: number }) => s + (Number(d.monto_total) - Number(d.monto_cobrado)), 0))
+      } else {
+        setDeudasPendientes((deudasRes.data || []).filter((d: { sede_id?: string }) => d.sede_id === sf).reduce((s: number, d: { monto_total: number; monto_cobrado: number }) => s + (Number(d.monto_total) - Number(d.monto_cobrado)), 0))
+      }
+
+      // Filter vencimientos by sede
+      const vencData = (vencimientosRes.data || []) as { id: string; concepto: string; monto: number; fecha_vencimiento: string; categoria: string; sede_ids?: string[] }[]
+      if (sf === 'todas') {
+        setProximosVencimientos(vencData.slice(0, 5))
+      } else {
+        setProximosVencimientos(vencData.filter(v => {
+          const ids = v.sede_ids || []
+          return ids.length === 0 || ids.includes(sf)
+        }).slice(0, 5))
+      }
     } catch (err) {
       console.error('Error fetching resumen:', err)
     } finally {
       setLoading(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hoy, mesActual])
+  }, [hoy, mesActual, sedeFilter])
 
+  useEffect(() => { fetchSedes() }, [fetchSedes])
   useEffect(() => { fetchResumen() }, [fetchResumen])
 
   const formatMoney = (n: number) =>
@@ -171,6 +225,21 @@ function ResumenTab() {
 
   return (
     <div>
+      {/* Sede filter */}
+      <div className="flex items-center gap-2 mb-4">
+        <Filter size={14} className="text-text-muted" />
+        <select
+          value={sedeFilter}
+          onChange={(e) => setSedeFilter(e.target.value)}
+          className="text-sm border border-border rounded-lg px-3 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-green-primary"
+        >
+          <option value="todas">Todas las sedes</option>
+          {sedes.map(s => (
+            <option key={s.id} value={s.id}>{s.nombre}</option>
+          ))}
+        </select>
+      </div>
+
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <div className="bg-surface rounded-xl border border-border p-4">
