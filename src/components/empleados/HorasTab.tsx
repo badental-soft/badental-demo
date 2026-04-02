@@ -267,18 +267,15 @@ export default function HorasTab({ isAdmin }: { isAdmin: boolean }) {
   const toggleApproval = async (weekNumber: number, approve: boolean) => {
     try {
       const { year, month } = currentMonth
+      const m = month + 1
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (supabase.from('weekly_approvals') as any)
-        .upsert(
-          {
-            year,
-            month: month + 1,
-            week_number: weekNumber,
-            approved: approve,
-          },
-          { onConflict: 'year,month,week_number' }
-        )
-      if (error) console.error('Error toggling approval:', error)
+      const tbl = supabase.from('weekly_approvals') as any
+      // Delete existing row first to avoid duplicates (no unique constraint)
+      await tbl.delete().eq('year', year).eq('month', m).eq('week_number', weekNumber)
+      if (approve) {
+        const { error } = await tbl.insert({ year, month: m, week_number: weekNumber, approved: true })
+        if (error) console.error('Error approving week:', error)
+      }
       fetchApprovals()
     } catch (err) {
       console.error('Error toggling approval:', err)
