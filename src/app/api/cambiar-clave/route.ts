@@ -27,7 +27,8 @@ export async function POST(request: Request) {
   // Update password using user's own session (preserves session/cookies)
   const { error: passError } = await supabase.auth.updateUser({ password })
 
-  if (passError) {
+  // If error is "same password", that's OK — user wants to keep current password
+  if (passError && !passError.message.toLowerCase().includes('different')) {
     return NextResponse.json({ error: passError.message }, { status: 500 })
   }
 
