@@ -39,13 +39,15 @@ export default function EmpleadosPage() {
   return (
     <div>
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="font-display text-2xl font-semibold text-text-primary mb-1">
-          {isAdmin ? 'Empleados' : 'Mi Panel'}
-        </h1>
-        <p className="text-sm text-text-secondary">
-          {isAdmin ? 'Tareas, turnos agendados, horas y configuracion' : 'Tu resumen, turnos, tareas y horas'}
-        </p>
+      <div className="flex items-center justify-between gap-3 mb-6">
+        <div>
+          <h1 className="font-display text-2xl font-semibold text-text-primary mb-1">
+            {isAdmin ? 'Empleados' : 'Mi Panel'}
+          </h1>
+          <p className="text-sm text-text-secondary hidden sm:block">
+            {isAdmin ? 'Tareas, turnos agendados, horas y configuracion' : 'Tu resumen, turnos, tareas y horas'}
+          </p>
+        </div>
       </div>
 
       {/* Tabs */}

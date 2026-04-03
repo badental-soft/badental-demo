@@ -362,20 +362,20 @@ function AgendadosTab() {
 
   return (
     <>
-      {/* Date nav */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-6">
-        <div className="flex items-center gap-2 bg-surface border border-border rounded-lg px-2 py-1.5">
+      {/* Date nav + filters */}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="flex items-center gap-1 bg-surface border border-border rounded-lg px-2 py-1.5">
           <button onClick={() => changeDate(-1)} className="p-1 hover:bg-beige rounded transition-colors">
-            <ChevronLeft size={18} className="text-text-secondary" />
+            <ChevronLeft size={16} className="text-text-secondary" />
           </button>
           <input
             type="date"
             value={fecha}
             onChange={(e) => setFecha(e.target.value)}
-            className="border-none bg-transparent text-sm font-medium text-text-primary focus:outline-none"
+            className="border-none bg-transparent text-sm font-medium text-text-primary focus:outline-none w-[130px]"
           />
           <button onClick={() => changeDate(1)} className="p-1 hover:bg-beige rounded transition-colors">
-            <ChevronRight size={18} className="text-text-secondary" />
+            <ChevronRight size={16} className="text-text-secondary" />
           </button>
           {!isToday && (
             <button onClick={() => setFecha(getArgentinaToday())} className="text-xs text-green-primary hover:text-green-dark font-medium ml-1">
@@ -383,21 +383,19 @@ function AgendadosTab() {
             </button>
           )}
         </div>
-        <span className="text-sm text-text-secondary capitalize">{formatFecha(fecha)}</span>
-        <div className="flex items-center gap-2 sm:ml-auto">
-          <Filter size={14} className="text-text-muted" />
-          <select
-            value={sedeFilter}
-            onChange={(e) => setSedeFilter(e.target.value)}
-            className="text-sm border border-border rounded-lg px-3 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-green-primary"
-          >
-            <option value="todas">Todas las sedes</option>
-            {sedesDisponibles.map(s => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
-        </div>
+        <select
+          value={sedeFilter}
+          onChange={(e) => setSedeFilter(e.target.value)}
+          className="text-sm border border-border rounded-lg px-2 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-green-primary"
+        >
+          <option value="todas">Todas las sedes</option>
+          {sedesDisponibles.map(s => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
       </div>
+
+      <p className="text-sm text-text-secondary capitalize mb-4">{formatFecha(fecha)}</p>
 
       {loading ? (
         <div className="bg-surface rounded-xl border border-border p-8 text-center text-text-muted text-sm">

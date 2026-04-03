@@ -236,32 +236,34 @@ function AdminDashboard() {
   return (
     <div>
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+      <div className="flex items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="font-display text-2xl font-semibold text-text-primary mb-1">Dashboard</h1>
-          <p className="text-sm text-text-secondary capitalize">{formatFechaHoy()}</p>
+          <p className="text-sm text-text-secondary capitalize hidden sm:block">{formatFechaHoy()}</p>
         </div>
-        <div className="flex items-center gap-3">
-          <Filter size={14} className="text-text-muted" />
-          <select
-            value={sedeFilter}
-            onChange={(e) => setSedeFilter(e.target.value)}
-            className="text-sm border border-border rounded-lg px-3 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-green-primary"
-          >
-            <option value="todas">Todas las sedes</option>
-            {sedes.map(s => (
-              <option key={s.id} value={s.id}>{s.nombre}</option>
-            ))}
-          </select>
-          <SyncButton
-            label="Sync todo"
-            endpoints={[
-              { url: '/api/sync-dentalink', body: { dias: 7 } },
-              { url: '/api/sync-pagos', body: { dias: 7 } },
-            ]}
-            onDone={() => fetchDashboardData()}
-          />
-        </div>
+        <SyncButton
+          label="Sync todo"
+          endpoints={[
+            { url: '/api/sync-dentalink', body: { dias: 7 } },
+            { url: '/api/sync-pagos', body: { dias: 7 } },
+          ]}
+          onDone={() => fetchDashboardData()}
+        />
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <select
+          value={sedeFilter}
+          onChange={(e) => setSedeFilter(e.target.value)}
+          className="text-sm border border-border rounded-lg px-2 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-green-primary"
+        >
+          <option value="todas">Todas las sedes</option>
+          {sedes.map(s => (
+            <option key={s.id} value={s.id}>{s.nombre}</option>
+          ))}
+        </select>
+        <span className="text-sm text-text-secondary capitalize sm:hidden">{formatFechaHoy()}</span>
       </div>
 
       {loading ? (

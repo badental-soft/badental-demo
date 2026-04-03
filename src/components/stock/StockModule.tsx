@@ -127,52 +127,33 @@ export default function StockModule() {
 
   return (
     <div>
-      {/* Header: actions + filters */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-6">
-        <div className="flex flex-wrap items-center gap-2">
+      {/* Header: actions */}
+      <div className="flex items-center justify-between gap-3 mb-6">
+        <div className="flex items-center gap-2">
           {canManage && (
             <button
               onClick={() => openModal('entrada')}
-              className="flex items-center gap-2 px-4 py-2 bg-green-primary text-white rounded-lg text-sm font-medium hover:bg-green-dark transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-green-primary text-white rounded-lg text-xs sm:text-sm font-medium hover:bg-green-dark transition-colors whitespace-nowrap"
             >
-              <Plus size={16} /> Entrada
+              <Plus size={14} /> Entrada
             </button>
           )}
           <button
             onClick={() => openModal('salida')}
-            className="flex items-center gap-2 px-4 py-2 bg-red text-white rounded-lg text-sm font-medium hover:opacity-90 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-red text-white rounded-lg text-xs sm:text-sm font-medium hover:opacity-90 transition-colors whitespace-nowrap"
           >
-            <Minus size={16} /> Salida
+            <Minus size={14} /> Salida
           </button>
-        </div>
-        <div className="flex items-center gap-2 sm:ml-auto">
-          <Filter size={14} className="text-text-muted" />
-          <select
-            value={sedeFilter}
-            onChange={e => setSedeFilter(e.target.value)}
-            className="text-sm border border-border rounded-lg px-3 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-green-primary"
-          >
-            <option value="todas">Todas las sedes</option>
-            {sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
-          </select>
-          <select
-            value={productoFilter}
-            onChange={e => setProductoFilter(e.target.value)}
-            className="text-sm border border-border rounded-lg px-3 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-green-primary"
-          >
-            <option value="todos">Todos los productos</option>
-            {productos.map(p => <option key={p.id} value={p.id}>{prodLabel(p)}</option>)}
-          </select>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1 bg-surface border border-border rounded-lg p-1 mb-6 w-fit">
+      <div className="flex items-center gap-1 bg-surface border border-border rounded-lg p-1 mb-6 max-w-full overflow-x-auto">
         {tabs.map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors whitespace-nowrap
+            className={`px-3 sm:px-4 py-2 rounded-md text-sm font-medium transition-colors whitespace-nowrap
               ${activeTab === tab.id
                 ? 'bg-green-primary text-white shadow-sm'
                 : 'text-text-secondary hover:text-text-primary hover:bg-beige'
@@ -182,6 +163,28 @@ export default function StockModule() {
           </button>
         ))}
       </div>
+
+      {/* Filters */}
+      {activeTab !== 'productos' && (
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <select
+            value={sedeFilter}
+            onChange={e => setSedeFilter(e.target.value)}
+            className="text-sm border border-border rounded-lg px-2 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-green-primary"
+          >
+            <option value="todas">Todas las sedes</option>
+            {sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+          </select>
+          <select
+            value={productoFilter}
+            onChange={e => setProductoFilter(e.target.value)}
+            className="text-sm border border-border rounded-lg px-2 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-green-primary"
+          >
+            <option value="todos">Todos los productos</option>
+            {productos.map(p => <option key={p.id} value={p.id}>{prodLabel(p)}</option>)}
+          </select>
+        </div>
+      )}
 
       {/* Content */}
       {activeTab === 'resumen' && (
