@@ -172,26 +172,28 @@ export default function CobranzasPage() {
           <h1 className="font-display text-2xl font-semibold text-text-primary mb-1">Cobranzas</h1>
           <p className="text-sm text-text-secondary hidden sm:block">Registro de cobros por sede — datos de Dentalink + manual</p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {user?.rol === 'admin' && (
-            <button
-              onClick={handleSync}
-              disabled={syncing}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-green-primary hover:bg-green-dark text-white text-xs sm:text-sm font-medium rounded-lg transition-colors disabled:opacity-50 whitespace-nowrap"
-            >
-              <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
-              <span className="hidden sm:inline">{syncing ? 'Sincronizando...' : 'Sync Pagos'}</span>
-              <span className="sm:hidden">Sync</span>
-            </button>
-          )}
+        {user?.rol === 'admin' && (
           <button
-            onClick={() => setShowForm(!showForm)}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-gold hover:bg-gold-dark text-white text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap"
+            onClick={handleSync}
+            disabled={syncing}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-green-primary hover:bg-green-dark text-white text-xs sm:text-sm font-medium rounded-lg transition-colors disabled:opacity-50 whitespace-nowrap"
           >
-            {showForm ? <X size={14} /> : <Plus size={14} />}
-            <span className="hidden sm:inline">{showForm ? 'Cancelar' : 'Agregar'}</span>
+            <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
+            <span className="hidden sm:inline">{syncing ? 'Sincronizando...' : 'Sync Pagos'}</span>
+            <span className="sm:hidden">Sync</span>
           </button>
-        </div>
+        )}
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center gap-2 mb-4">
+        <button
+          onClick={() => setShowForm(!showForm)}
+          className="inline-flex items-center gap-2 px-4 py-2 bg-green-primary hover:bg-green-dark text-white text-sm font-medium rounded-lg transition-colors"
+        >
+          {showForm ? <X size={16} /> : <Plus size={16} />}
+          {showForm ? 'Cancelar' : 'Agregar Cobranza'}
+        </button>
       </div>
 
       {/* Manual entry form */}

@@ -572,10 +572,10 @@ function CobranzasTab({ syncKey }: { syncKey: number }) {
       <div className="flex items-center gap-2 mb-4">
         <button
           onClick={() => setShowForm(!showForm)}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-gold hover:bg-gold-dark text-white text-sm font-medium rounded-lg transition-colors"
+          className="inline-flex items-center gap-2 px-4 py-2 bg-green-primary hover:bg-green-dark text-white text-sm font-medium rounded-lg transition-colors"
         >
           {showForm ? <X size={16} /> : <Plus size={16} />}
-          {showForm ? 'Cancelar' : 'Agregar'}
+          {showForm ? 'Cancelar' : 'Agregar Cobranza'}
         </button>
       </div>
 
@@ -1240,10 +1240,10 @@ function GastosTab() {
       <div className="flex items-center gap-2 mb-4">
         <button
           onClick={() => setShowForm(!showForm)}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-green-primary hover:bg-green-dark text-white text-sm font-medium rounded-lg transition-colors"
+          className="inline-flex items-center gap-2 px-4 py-2 bg-red hover:opacity-90 text-white text-sm font-medium rounded-lg transition-colors"
         >
           {showForm ? <X size={16} /> : <Plus size={16} />}
-          {showForm ? 'Cancelar' : 'Nuevo Gasto'}
+          {showForm ? 'Cancelar' : 'Agregar Gasto'}
         </button>
       </div>
 
