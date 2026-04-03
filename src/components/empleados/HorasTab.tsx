@@ -164,7 +164,9 @@ export default function HorasTab({ isAdmin }: { isAdmin: boolean }) {
       const { year, month } = currentMonth
       const dbMonth = month + 1
       const startDate = `${year}-${String(dbMonth).padStart(2, '0')}-01`
-      const endDate = `${year}-${String(dbMonth).padStart(2, '0')}-31`
+      // Use actual last day of month (not hardcoded 31 which fails for months with fewer days)
+      const lastDay = new Date(year, dbMonth, 0).getDate()
+      const endDate = `${year}-${String(dbMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
 
       let query = supabase
         .from('hour_entries')
@@ -177,7 +179,7 @@ export default function HorasTab({ isAdmin }: { isAdmin: boolean }) {
       }
 
       const { data, error } = await query
-      if (error) { console.error('Error fetching entries:', error); return }
+      if (error) { console.error('Error fetching entries:', error); setEntries([]); return }
       setEntries((data as unknown as HourEntry[]) || [])
     } catch (err) {
       console.error('Error fetching entries:', err)
