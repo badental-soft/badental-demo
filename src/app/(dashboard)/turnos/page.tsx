@@ -42,10 +42,10 @@ export default function TurnosPage() {
   return (
     <div>
       {/* Header */}
-      <div className="flex items-start justify-between gap-3 mb-6">
+      <div className="flex items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="font-display text-2xl font-semibold text-text-primary mb-1">Turnos</h1>
-          <p className="text-sm text-text-secondary">Agenda diaria y seguimiento de turnos agendados</p>
+          <p className="text-sm text-text-secondary hidden sm:block">Agenda diaria y seguimiento de turnos agendados</p>
         </div>
         {user?.rol === 'admin' && (
           <SyncButton

@@ -65,13 +65,23 @@ const TIPO_PAGO_LABELS: Record<string, { label: string; icon: React.ReactNode; b
 
 export default function FinanzasPage() {
   const [activeTab, setActiveTab] = useState<TabId>('resumen')
+  const [syncKey, setSyncKey] = useState(0)
 
   return (
     <div>
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="font-display text-2xl font-semibold text-text-primary mb-1">Finanzas</h1>
-        <p className="text-sm text-text-secondary">Cobranzas, deudas pendientes y gastos</p>
+      <div className="flex items-center justify-between gap-3 mb-6">
+        <div>
+          <h1 className="font-display text-2xl font-semibold text-text-primary mb-1">Finanzas</h1>
+          <p className="text-sm text-text-secondary hidden sm:block">Cobranzas, deudas pendientes y gastos</p>
+        </div>
+        {(activeTab === 'cobranzas') && (
+          <SyncButton
+            label="Sync Pagos"
+            endpoints={[{ url: '/api/sync-pagos', body: { dias: 7 } }]}
+            onDone={() => setSyncKey(k => k + 1)}
+          />
+        )}
       </div>
 
       {/* Tabs */}
@@ -94,7 +104,7 @@ export default function FinanzasPage() {
 
       {/* Tab content */}
       {activeTab === 'resumen' && <ResumenTab />}
-      {activeTab === 'cobranzas' && <CobranzasTab />}
+      {activeTab === 'cobranzas' && <CobranzasTab syncKey={syncKey} />}
       {activeTab === 'por-cobrar' && <PorCobrarTab />}
       {activeTab === 'gastos' && <GastosTab />}
     </div>
@@ -367,7 +377,7 @@ function ResumenTab() {
 // ============================================
 // COBRANZAS TAB (fully functional)
 // ============================================
-function CobranzasTab() {
+function CobranzasTab({ syncKey }: { syncKey: number }) {
   const { user } = useAuth()
   const supabase = createClient()
   const [cobranzas, setCobranzas] = useState<CobranzaConSede[]>([])
@@ -424,7 +434,7 @@ function CobranzasTab() {
       setLoading(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fecha, user])
+  }, [fecha, user, syncKey])
 
   useEffect(() => { fetchSedes() }, [fetchSedes])
   useEffect(() => { fetchCobranzas() }, [fetchCobranzas])
@@ -800,14 +810,6 @@ function CobranzasTab() {
             <option key={s.id} value={s.id}>{s.nombre}</option>
           ))}
         </select>
-
-        {user?.rol === 'admin' && (
-          <SyncButton
-            label="Sync Pagos"
-            endpoints={[{ url: '/api/sync-pagos', body: { dias: 7 } }]}
-            onDone={() => fetchCobranzas()}
-          />
-        )}
       </div>
 
       <p className="text-sm text-text-secondary capitalize mb-4">{formatFecha(fecha)}</p>
@@ -1256,7 +1258,7 @@ function GastosTab() {
                 type="date"
                 value={form.fecha}
                 onChange={e => setForm({ ...form, fecha: e.target.value })}
-                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white text-text-primary focus:outline-none focus:border-green-primary"
+                className="w-full min-w-0 border border-border rounded-lg px-3 py-2 text-sm bg-white text-text-primary focus:outline-none focus:border-green-primary"
                 required
               />
             </div>

@@ -53,13 +53,14 @@ export default function SyncButton({ label = 'Sync Dentalink', endpoints, onDone
       <button
         onClick={handleSync}
         disabled={syncing}
-        className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-primary hover:bg-green-dark text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-green-primary hover:bg-green-dark text-white text-xs sm:text-sm font-medium rounded-lg transition-colors disabled:opacity-50 whitespace-nowrap"
       >
         <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
-        {syncing ? 'Sincronizando...' : label}
+        <span className="hidden sm:inline">{syncing ? 'Sincronizando...' : label}</span>
+        <span className="sm:hidden">{syncing ? 'Sync...' : 'Sync'}</span>
       </button>
       {result && (
-        <span className="text-xs text-text-muted">{result}</span>
+        <span className="text-xs text-text-muted hidden sm:inline">{result}</span>
       )}
     </div>
   )

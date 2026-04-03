@@ -714,7 +714,7 @@ function MovimientoModal({
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl border border-border shadow-lg w-full max-w-md">
+      <div className="bg-white rounded-xl border border-border shadow-lg w-full max-w-md mx-4 sm:mx-0">
         <div className="flex items-center justify-between p-4 border-b border-border">
           <h3 className="font-semibold text-text-primary flex items-center gap-2">
             {type === 'entrada' ? (
@@ -768,7 +768,7 @@ function MovimientoModal({
                 type="date"
                 value={fecha}
                 onChange={e => setFecha(e.target.value)}
-                className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-white text-text-primary focus:outline-none focus:border-green-primary"
+                className="w-full min-w-0 text-sm border border-border rounded-lg px-3 py-2 bg-white text-text-primary focus:outline-none focus:border-green-primary"
               />
             </div>
           </div>
