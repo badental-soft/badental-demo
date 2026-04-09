@@ -38,11 +38,11 @@ const adminNavItems: NavItem[] = [
 ]
 
 const employeeNavItems: NavItem[] = [
-  { label: 'Dashboard', href: '/dashboard', icon: <LayoutDashboard size={20} />, roles: ['rolA', 'rolB', 'rolC'] },
-  { label: 'Turnos', href: '/turnos', icon: <CalendarDays size={20} />, roles: ['rolA'] },
-  { label: 'Stock', href: '/stock', icon: <Package size={20} />, roles: ['rolB'] },
+  { label: 'Dashboard', href: '/dashboard', icon: <LayoutDashboard size={20} />, roles: ['rolA', 'rolB', 'rolC', 'rolD'] },
+  { label: 'Turnos', href: '/turnos', icon: <CalendarDays size={20} />, roles: ['rolA', 'rolC', 'rolD'] },
+  { label: 'Stock', href: '/stock', icon: <Package size={20} />, roles: ['rolD'] },
   { label: 'Laboratorio', href: '/laboratorio', icon: <FlaskConical size={20} />, roles: ['rolB', 'rolC'] },
-  { label: 'Tareas', href: '/tareas', icon: <CheckSquare size={20} />, roles: ['rolA', 'rolB', 'rolC'] },
+  { label: 'Tareas', href: '/tareas', icon: <CheckSquare size={20} />, roles: ['rolA', 'rolB', 'rolC', 'rolD'] },
   { label: 'Horas', href: '/horas', icon: <Timer size={20} />, roles: ['rolA'] },
 ]
 
@@ -61,6 +61,7 @@ export default function Sidebar() {
     rolA: 'Recepcionista Digital',
     rolB: 'Vendedor',
     rolC: 'Recepcionista',
+    rolD: 'Asistente',
   }
 
   return (

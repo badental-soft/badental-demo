@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'rolA' | 'rolB' | 'rolC'
+export type UserRole = 'admin' | 'rolA' | 'rolB' | 'rolC' | 'rolD'
 export type TipoPago = 'efectivo' | 'transferencia' | 'tarjeta_debito' | 'tarjeta_credito'
 export type EstadoDeuda = 'pendiente' | 'parcial' | 'pagado'
 export type EstadoTurno = 'agendado' | 'atendido' | 'no_asistio' | 'cancelado'

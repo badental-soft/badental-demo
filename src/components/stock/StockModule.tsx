@@ -110,11 +110,11 @@ export default function StockModule() {
   }
 
   const isAdmin = user?.rol === 'admin'
-  const canManage = isAdmin // solo admin puede gestionar productos y entradas
+  const canManage = isAdmin || user?.rol === 'rolD' // admin y rolD pueden registrar entrada/salida
   const tabs: { id: ViewTab; label: string }[] = [
     { id: 'resumen', label: 'Stock Actual' },
     { id: 'movimientos', label: 'Movimientos' },
-    ...(canManage ? [{ id: 'productos' as ViewTab, label: 'Productos' }] : []),
+    ...(isAdmin ? [{ id: 'productos' as ViewTab, label: 'Productos' }] : []), // solo admin gestiona productos
   ]
 
   if (loading) {

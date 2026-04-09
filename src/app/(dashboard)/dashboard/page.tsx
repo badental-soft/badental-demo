@@ -104,7 +104,7 @@ function AdminDashboard() {
       // Tareas: get plantillas (con rol) + completadas for today + all employees with roles
       const plantillasQuery = supabase.from('tarea_plantillas').select('id, rol').eq('activa', true)
       const completadasQuery = supabase.from('tarea_completadas').select('user_id, plantilla_id').eq('fecha', hoy).eq('completada', true)
-      const empleadosQuery = supabase.from('users').select('id, rol').in('rol', ['rolA', 'rolB', 'rolC'])
+      const empleadosQuery = supabase.from('users').select('id, rol').in('rol', ['rolA', 'rolB', 'rolC', 'rolD'])
 
       // Chart: cobranzas + gastos by day this month
       const chartCobQuery = supabase.from('cobranzas').select('fecha, monto, sede_id, sede_ids').gte('fecha', inicioMes).lte('fecha', hoy)

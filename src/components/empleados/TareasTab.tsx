@@ -52,12 +52,16 @@ const CATEGORIA_STYLES: Record<string, { bg: string; text: string }> = {
   recepcion: { bg: 'bg-blue-light', text: 'text-blue' },
   clinico: { bg: 'bg-green-light', text: 'text-green-primary' },
   admin: { bg: 'bg-gray-100', text: 'text-gray-600' },
+  // Rol D
+  higiene: { bg: 'bg-pink-50', text: 'text-pink-600' },
+  stock: { bg: 'bg-amber-light', text: 'text-amber' },
 }
 
 const ROL_LABELS: Record<string, string> = {
   rolA: 'Rol A — Recepcionista digital',
   rolB: 'Rol B — Vendedor',
   rolC: 'Rol C — Recepcionista físico',
+  rolD: 'Rol D — Asistente',
 }
 
 export default function TareasTab({ isAdmin }: { isAdmin: boolean }) {

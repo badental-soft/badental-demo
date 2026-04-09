@@ -37,6 +37,7 @@ const ROLE_LABELS: Record<UserRole, string> = {
   rolA: 'Recepcionista Digital',
   rolB: 'Vendedor',
   rolC: 'Recepcionista',
+  rolD: 'Asistente',
 }
 
 const ROLE_COLORS: Record<UserRole, string> = {
@@ -44,6 +45,7 @@ const ROLE_COLORS: Record<UserRole, string> = {
   rolA: 'bg-blue-100 text-blue-700',
   rolB: 'bg-amber-100 text-amber-700',
   rolC: 'bg-green-100 text-green-700',
+  rolD: 'bg-pink-100 text-pink-700',
 }
 
 export default function ConfiguracionClient() {
@@ -259,13 +261,13 @@ export default function ConfiguracionClient() {
 
       {/* Summary */}
       <div className="mt-4 flex gap-3 flex-wrap">
-        {(['admin', 'rolA', 'rolB', 'rolC'] as UserRole[]).map(rol => {
+        {(['admin', 'rolA', 'rolB', 'rolC', 'rolD'] as UserRole[]).map(rol => {
           const count = users.filter(u => u.rol === rol).length
           if (count === 0) return null
           return (
             <div key={rol} className="flex items-center gap-2 text-xs text-text-secondary">
               <span className={`inline-block w-2 h-2 rounded-full ${
-                rol === 'admin' ? 'bg-purple-500' : rol === 'rolA' ? 'bg-blue-500' : rol === 'rolB' ? 'bg-amber-500' : 'bg-green-500'
+                rol === 'admin' ? 'bg-purple-500' : rol === 'rolA' ? 'bg-blue-500' : rol === 'rolB' ? 'bg-amber-500' : rol === 'rolC' ? 'bg-green-500' : 'bg-pink-500'
               }`} />
               {count} {ROLE_LABELS[rol]}{count > 1 ? 's' : ''}
             </div>

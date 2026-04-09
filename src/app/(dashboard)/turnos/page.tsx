@@ -56,8 +56,8 @@ export default function TurnosPage() {
         )}
       </div>
 
-      {/* Tabs — solo admin ve "Turnos dados" */}
-      {user?.rol === 'admin' && (
+      {/* Tabs — admin y rolA ven "Turnos dados" */}
+      {(user?.rol === 'admin' || user?.rol === 'rolA') && (
         <div className="flex items-center gap-1 bg-surface border border-border rounded-lg p-1 mb-6 max-w-full overflow-x-auto">
           <button
             onClick={() => setActiveTab('agenda')}
@@ -85,7 +85,7 @@ export default function TurnosPage() {
       )}
 
       {activeTab === 'agenda' && <AgendaTab syncKey={syncKey} />}
-      {activeTab === 'agendados' && user?.rol === 'admin' && <AgendadosTab />}
+      {activeTab === 'agendados' && (user?.rol === 'admin' || user?.rol === 'rolA') && <AgendadosTab />}
     </div>
   )
 }
