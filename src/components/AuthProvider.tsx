@@ -47,6 +47,9 @@ function triggerSync() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ dias: 7 }),
   }).catch(() => {})
+  // Sync pacientes nuevos del día (trae fecha_afiliacion de Dentalink en vivo)
+  const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' })
+  fetch(`/api/dentalink-agendados?fecha=${hoy}`).catch(() => {})
 }
 
 export function AuthProvider({ children, initialUser }: { children: React.ReactNode; initialUser: User | null }) {
