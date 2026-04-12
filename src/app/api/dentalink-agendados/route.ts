@@ -44,9 +44,14 @@ function getArgentinaHoy(): string {
 async function syncPacientesHoy(hoy: string) {
   const admin = getSupabaseAdmin()
 
-  // 1. Get today's citas from Dentalink
+  // Fetch citas for today + next 7 days
+  // Patients registered today may have appointments for upcoming days (e.g. Sunday registrations)
+  const hasta = new Date()
+  hasta.setDate(hasta.getDate() + 7)
+  const fechaHasta = hasta.toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' })
+
   const citas = await fetchPaginado<DentalinkCita>('/citas', {
-    fecha: [{ gte: hoy }, { lte: hoy }],
+    fecha: [{ gte: hoy }, { lte: fechaHasta }],
   })
 
   const patientIds = [...new Set(citas.map(c => c.id_paciente))]

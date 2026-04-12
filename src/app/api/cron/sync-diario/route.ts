@@ -143,12 +143,12 @@ export async function GET(request: Request) {
       console.error('Error sync pagos:', pagosError)
     }
 
-    // ── 3. Sync pacientes nuevos (solo hoy) ────────────────
+    // ── 3. Sync pacientes nuevos ─────────────────────────────
     let pacientesNuevos = 0
     try {
-      // Obtener IDs de pacientes de citas de hoy
-      const citasHoy = citas.filter(c => c.fecha === fechaHoy)
-      const patientIds = [...new Set(citasHoy.map(c => c.id_paciente))]
+      // Use ALL fetched citas (-7 to +30 days) to discover new patients
+      // Patients registered today may have appointments for future dates
+      const patientIds = [...new Set(citas.map(c => c.id_paciente))]
 
       if (patientIds.length > 0) {
         // Check cuáles ya existen
@@ -183,7 +183,7 @@ export async function GET(request: Request) {
               const fechaAlta = extraerFecha(paciente['fecha_afiliacion'])
               if (!fechaAlta) return null
 
-              const primeraCita = citasHoy
+              const primeraCita = citas
                 .filter(c => c.id_paciente === id)
                 .sort((a, b) => `${a.fecha} ${a.hora_inicio}`.localeCompare(`${b.fecha} ${b.hora_inicio}`))[0]
 
