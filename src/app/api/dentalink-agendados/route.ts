@@ -36,69 +36,68 @@ function getArgentinaHoy(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' })
 }
 
+interface DentalinkPaciente {
+  id: number
+  nombre: string
+  apellido: string
+  fecha_afiliacion: string
+  [key: string]: unknown
+}
+
 /**
- * Sync pacientes nuevos del día actual desde Dentalink.
- * Busca las citas de hoy, obtiene los pacientes nuevos (no existentes en la tabla),
- * consulta su fecha_afiliacion en Dentalink, y guarda los que fueron dados de alta hoy.
+ * Sync pacientes nuevos del día.
+ * Estrategia: buscar pacientes por fecha_afiliacion=hoy en la API de Dentalink.
+ * Esto captura pacientes dados de alta hoy sin importar cuándo es su turno.
  */
 async function syncPacientesHoy(hoy: string) {
   const admin = getSupabaseAdmin()
-
-  // Fetch citas for today + next 7 days
-  // Patients registered today may have appointments for upcoming days (e.g. Sunday registrations)
-  const hasta = new Date()
-  hasta.setDate(hasta.getDate() + 7)
-  const fechaHasta = hasta.toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' })
-
-  const citas = await fetchPaginado<DentalinkCita>('/citas', {
-    fecha: [{ gte: hoy }, { lte: fechaHasta }],
-  })
-
-  const patientIds = [...new Set(citas.map(c => c.id_paciente))]
-  if (patientIds.length === 0) return 0
-
-  // 2. Check which patient IDs already exist in pacientes_nuevos
-  const existingIds = new Set<number>()
-  for (let i = 0; i < patientIds.length; i += 500) {
-    const batch = patientIds.slice(i, i + 500)
-    const { data: existing } = await admin
-      .from('pacientes_nuevos')
-      .select('id_dentalink')
-      .in('id_dentalink', batch)
-    if (existing) {
-      for (const e of existing) existingIds.add(e.id_dentalink as number)
-    }
-  }
-
-  const newIds = patientIds.filter(id => !existingIds.has(id))
-  if (newIds.length === 0) return 0
-
-  // 3. Lookup new patients from Dentalink (5 parallel, 500ms between batches)
   let saved = 0
-  for (let i = 0; i < newIds.length; i += 5) {
-    const batch = newIds.slice(i, i + 5)
-    const promises = batch.map(async (id) => {
-      try {
-        const res = await fetch(`${API_BASE}/pacientes/${id}`, {
-          headers: {
-            'Authorization': `Token ${API_TOKEN}`,
-            'Content-Type': 'application/json',
-          },
-        })
-        if (!res.ok) return null
-        const json = await res.json()
-        const paciente = json.data || json
-        const fechaAlta = extraerFecha(paciente['fecha_afiliacion'])
-        if (!fechaAlta) return null
 
+  // ── Estrategia 1: buscar pacientes por fecha_afiliacion ──
+  try {
+    const pacientesAPI = await fetchPaginado<DentalinkPaciente>('/pacientes', {
+      fecha_afiliacion: [{ gte: hoy }, { lte: hoy }],
+    })
+
+    // Double-check fecha_afiliacion matches (API might be loose)
+    const pacientesHoy = pacientesAPI.filter(p => extraerFecha(p.fecha_afiliacion) === hoy)
+
+    if (pacientesHoy.length > 0) {
+      // Check which are new
+      const ids = pacientesHoy.map(p => p.id)
+      const existingIds = new Set<number>()
+      for (let i = 0; i < ids.length; i += 500) {
+        const batch = ids.slice(i, i + 500)
+        const { data } = await admin.from('pacientes_nuevos').select('id_dentalink').in('id_dentalink', batch)
+        if (data) data.forEach(e => existingIds.add(e.id_dentalink as number))
+      }
+
+      const newPacientes = pacientesHoy.filter(p => !existingIds.has(p.id))
+      if (newPacientes.length === 0) return 0
+
+      // Fetch citas to get appointment details (sede, profesional, comentario)
+      let citas: DentalinkCita[] = []
+      try {
+        const hasta = new Date()
+        hasta.setDate(hasta.getDate() + 60)
+        const fechaHasta = hasta.toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' })
+        citas = await fetchPaginado<DentalinkCita>('/citas', {
+          fecha: [{ gte: hoy }, { lte: fechaHasta }],
+        })
+      } catch {
+        // If cita fetch fails, still save patients without cita details
+      }
+
+      const toInsert = newPacientes.map(p => {
+        const nombre = [p.nombre, p.apellido].filter(Boolean).join(' ').trim() || 'Sin nombre'
         const primeraCita = citas
-          .filter(c => c.id_paciente === id)
+          .filter(c => c.id_paciente === p.id)
           .sort((a, b) => `${a.fecha} ${a.hora_inicio}`.localeCompare(`${b.fecha} ${b.hora_inicio}`))[0]
 
         return {
-          id_dentalink: id,
-          nombre: primeraCita?.nombre_paciente?.trim() || 'Sin nombre',
-          fecha_afiliacion: fechaAlta,
+          id_dentalink: p.id,
+          nombre: primeraCita?.nombre_paciente?.trim() || nombre,
+          fecha_afiliacion: hoy,
           primera_cita_fecha: primeraCita?.fecha || null,
           primera_cita_hora: primeraCita?.hora_inicio?.slice(0, 5) || null,
           primera_cita_profesional: primeraCita?.nombre_dentista || null,
@@ -107,21 +106,94 @@ async function syncPacientesHoy(hoy: string) {
           primera_cita_comentario: primeraCita?.comentarios || null,
           origen: detectarOrigen(primeraCita?.comentarios || ''),
         }
-      } catch {
-        return null
+      })
+
+      for (let i = 0; i < toInsert.length; i += 500) {
+        const batch = toInsert.slice(i, i + 500)
+        const { error } = await admin.from('pacientes_nuevos').insert(batch)
+        if (error) console.error('Insert error:', error.message)
+        else saved += batch.length
       }
+
+      return saved
+    }
+  } catch (err) {
+    console.log('Pacientes API fecha_afiliacion filter failed, trying cita fallback:', err)
+  }
+
+  // ── Estrategia 2 (fallback): buscar por citas recientes ──
+  try {
+    const hasta = new Date()
+    hasta.setDate(hasta.getDate() + 30)
+    const fechaHasta = hasta.toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' })
+
+    const citas = await fetchPaginado<DentalinkCita>('/citas', {
+      fecha: [{ gte: hoy }, { lte: fechaHasta }],
     })
 
-    const results = (await Promise.all(promises)).filter(Boolean)
-    if (results.length > 0) {
-      const { error } = await admin.from('pacientes_nuevos').insert(results)
-      if (error) console.error('Pacientes insert error:', error.message)
-      else saved += results.length
+    const patientIds = [...new Set(citas.map(c => c.id_paciente))]
+    if (patientIds.length === 0) return 0
+
+    const existingIds = new Set<number>()
+    for (let i = 0; i < patientIds.length; i += 500) {
+      const batch = patientIds.slice(i, i + 500)
+      const { data } = await admin.from('pacientes_nuevos').select('id_dentalink').in('id_dentalink', batch)
+      if (data) data.forEach(e => existingIds.add(e.id_dentalink as number))
     }
 
-    if (i + 5 < newIds.length) {
-      await new Promise(r => setTimeout(r, 500))
+    const newIds = patientIds.filter(id => !existingIds.has(id))
+    if (newIds.length === 0) return 0
+
+    for (let i = 0; i < newIds.length; i += 5) {
+      const batch = newIds.slice(i, i + 5)
+      const promises = batch.map(async (id) => {
+        try {
+          const res = await fetch(`${API_BASE}/pacientes/${id}`, {
+            headers: {
+              'Authorization': `Token ${API_TOKEN}`,
+              'Content-Type': 'application/json',
+            },
+          })
+          if (!res.ok) return null
+          const json = await res.json()
+          const paciente = json.data || json
+          const fechaAlta = extraerFecha(paciente['fecha_afiliacion'])
+          if (!fechaAlta) return null
+
+          const primeraCita = citas
+            .filter(c => c.id_paciente === id)
+            .sort((a, b) => `${a.fecha} ${a.hora_inicio}`.localeCompare(`${b.fecha} ${b.hora_inicio}`))[0]
+
+          return {
+            id_dentalink: id,
+            nombre: primeraCita?.nombre_paciente?.trim() || 'Sin nombre',
+            fecha_afiliacion: fechaAlta,
+            primera_cita_fecha: primeraCita?.fecha || null,
+            primera_cita_hora: primeraCita?.hora_inicio?.slice(0, 5) || null,
+            primera_cita_profesional: primeraCita?.nombre_dentista || null,
+            primera_cita_sede: primeraCita?.nombre_sucursal || null,
+            primera_cita_id_sucursal: primeraCita?.id_sucursal || null,
+            primera_cita_comentario: primeraCita?.comentarios || null,
+            origen: detectarOrigen(primeraCita?.comentarios || ''),
+          }
+        } catch {
+          return null
+        }
+      })
+
+      const results = (await Promise.all(promises)).filter(Boolean)
+      if (results.length > 0) {
+        const { error } = await admin.from('pacientes_nuevos').insert(results)
+        if (error) console.error('Insert error:', error.message)
+        else saved += results.length
+      }
+
+      if (i + 5 < newIds.length) {
+        await new Promise(r => setTimeout(r, 500))
+      }
     }
+  } catch (err) {
+    console.error('Cita fallback also failed:', err)
   }
 
   return saved
@@ -160,7 +232,6 @@ export async function GET(request: Request) {
       syncCount = await syncPacientesHoy(hoy)
     } catch (err) {
       console.error('Error syncing pacientes hoy:', err)
-      // Continue — still return whatever is in the table
     }
   }
 
