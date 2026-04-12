@@ -9,17 +9,17 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
-  RefreshCw,
   ChevronLeft,
   ChevronRight,
-  Filter,
   Ban,
   Search,
   CalendarPlus,
   MapPin,
-  MessageSquare,
-  TrendingUp,
+  ArrowUpRight,
+  ArrowDownRight,
+  BarChart3,
 } from 'lucide-react'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import type { Turno, Sede } from '@/types/database'
 import { getArgentinaToday } from '@/lib/utils/dates'
 import SyncButton from '@/components/SyncButton'
@@ -38,6 +38,7 @@ export default function TurnosPage() {
   const { user } = useAuth()
   const [activeTab, setActiveTab] = useState<TabId>('agenda')
   const [syncKey, setSyncKey] = useState(0)
+  const isAdmin = user?.rol === 'admin'
 
   return (
     <div>
@@ -47,7 +48,7 @@ export default function TurnosPage() {
           <h1 className="font-display text-2xl font-semibold text-text-primary mb-1">Turnos</h1>
           <p className="text-sm text-text-secondary hidden sm:block">Agenda diaria y seguimiento de turnos agendados</p>
         </div>
-        {user?.rol === 'admin' && (
+        {isAdmin && (
           <SyncButton
             label="Sync Turnos"
             endpoints={[{ url: '/api/sync-dentalink', body: { dias: 7 } }]}
@@ -56,8 +57,11 @@ export default function TurnosPage() {
         )}
       </div>
 
+      {/* Monthly Analytics — solo admin */}
+      {isAdmin && <TurnosAnalytics syncKey={syncKey} />}
+
       {/* Tabs — admin y rolA ven "Turnos dados" */}
-      {(user?.rol === 'admin' || user?.rol === 'rolA') && (
+      {(isAdmin || user?.rol === 'rolA') && (
         <div className="flex items-center gap-1 bg-surface border border-border rounded-lg p-1 mb-6 max-w-full overflow-x-auto">
           <button
             onClick={() => setActiveTab('agenda')}
@@ -85,7 +89,195 @@ export default function TurnosPage() {
       )}
 
       {activeTab === 'agenda' && <AgendaTab syncKey={syncKey} />}
-      {activeTab === 'agendados' && (user?.rol === 'admin' || user?.rol === 'rolA') && <AgendadosTab />}
+      {activeTab === 'agendados' && (isAdmin || user?.rol === 'rolA') && <AgendadosTab />}
+    </div>
+  )
+}
+
+// ============================================
+// Analytics: Resumen mensual de turnos
+// ============================================
+function TurnosAnalytics({ syncKey }: { syncKey: number }) {
+  const supabase = createClient()
+  const [stats, setStats] = useState<{
+    mesActual: { total: number; atendidos: number; noShows: number; cancelados: number; tasaShow: number }
+    mesAnterior: { total: number; atendidos: number; tasaShow: number }
+    promedioDiario: number
+    semana: Array<{ dia: string; label: string; total: number; atendidos: number }>
+  } | null>(null)
+
+  const fetchStats = useCallback(async () => {
+    const hoy = getArgentinaToday()
+    const [year, month] = hoy.split('-').map(Number)
+
+    // Current month range
+    const mesStart = `${year}-${String(month).padStart(2, '0')}-01`
+    const lastDay = new Date(year, month, 0).getDate()
+    const mesEnd = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+
+    // Previous month range
+    const prevMonth = month === 1 ? 12 : month - 1
+    const prevYear = month === 1 ? year - 1 : year
+    const prevStart = `${prevYear}-${String(prevMonth).padStart(2, '0')}-01`
+    const prevLastDay = new Date(prevYear, prevMonth, 0).getDate()
+    const prevEnd = `${prevYear}-${String(prevMonth).padStart(2, '0')}-${String(prevLastDay).padStart(2, '0')}`
+
+    // Last 7 days
+    const dias7: string[] = []
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(hoy + 'T12:00:00')
+      d.setDate(d.getDate() - i)
+      dias7.push(d.toISOString().split('T')[0])
+    }
+    const semanaStart = dias7[0]
+    const semanaEnd = dias7[6]
+
+    const [resMes, resPrev, resSemana] = await Promise.all([
+      supabase.from('turnos').select('estado').gte('fecha', mesStart).lte('fecha', mesEnd),
+      supabase.from('turnos').select('estado').gte('fecha', prevStart).lte('fecha', prevEnd),
+      supabase.from('turnos').select('fecha, estado').gte('fecha', semanaStart).lte('fecha', semanaEnd),
+    ])
+
+    const turnosMes = (resMes.data || []) as unknown as { estado: string }[]
+    const turnosPrev = (resPrev.data || []) as unknown as { estado: string }[]
+    const turnosSemana = (resSemana.data || []) as unknown as { fecha: string; estado: string }[]
+
+    // Current month stats
+    const mesTotal = turnosMes.length
+    const mesAtendidos = turnosMes.filter(t => t.estado === 'atendido').length
+    const mesNoShows = turnosMes.filter(t => t.estado === 'no_asistio').length
+    const mesCancelados = turnosMes.filter(t => t.estado === 'cancelado').length
+    const mesEfectivos = mesAtendidos + mesNoShows
+    const mesTasaShow = mesEfectivos > 0 ? Math.round((mesAtendidos / mesEfectivos) * 100) : 0
+
+    // Days elapsed in month (up to today)
+    const diaHoy = parseInt(hoy.split('-')[2])
+    const promedioDiario = diaHoy > 0 ? Math.round(mesTotal / diaHoy) : 0
+
+    // Previous month stats
+    const prevTotal = turnosPrev.length
+    const prevAtendidos = turnosPrev.filter(t => t.estado === 'atendido').length
+    const prevNoShows = turnosPrev.filter(t => t.estado === 'no_asistio').length
+    const prevEfectivos = prevAtendidos + prevNoShows
+    const prevTasaShow = prevEfectivos > 0 ? Math.round((prevAtendidos / prevEfectivos) * 100) : 0
+
+    // Weekly chart data
+    const semana = dias7.map(dia => {
+      const turnosDia = turnosSemana.filter(t => t.fecha === dia)
+      const d = new Date(dia + 'T12:00:00')
+      return {
+        dia,
+        label: d.toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric' }).replace('.', ''),
+        total: turnosDia.length,
+        atendidos: turnosDia.filter(t => t.estado === 'atendido').length,
+      }
+    })
+
+    setStats({
+      mesActual: { total: mesTotal, atendidos: mesAtendidos, noShows: mesNoShows, cancelados: mesCancelados, tasaShow: mesTasaShow },
+      mesAnterior: { total: prevTotal, atendidos: prevAtendidos, tasaShow: prevTasaShow },
+      promedioDiario,
+      semana,
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncKey])
+
+  useEffect(() => { fetchStats() }, [fetchStats])
+
+  if (!stats) return null
+
+  const pctChange = stats.mesAnterior.total > 0
+    ? Math.round(((stats.mesActual.total - stats.mesAnterior.total) / stats.mesAnterior.total) * 100)
+    : null
+
+  const tasaDiff = stats.mesActual.tasaShow - stats.mesAnterior.tasaShow
+
+  const mesLabel = new Date(getArgentinaToday() + 'T12:00:00').toLocaleDateString('es-AR', { month: 'long' })
+
+  return (
+    <div className="mb-6">
+      {/* KPIs row */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        {/* Total mes */}
+        <div className="bg-surface rounded-xl border border-border p-4">
+          <div className="flex items-center gap-2 mb-1">
+            <CalendarDays size={16} className="text-text-muted" />
+            <span className="text-xs font-medium text-text-muted uppercase tracking-wide">Total {mesLabel}</span>
+          </div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-semibold text-text-primary">{stats.mesActual.total}</span>
+            {pctChange !== null && (
+              <span className={`inline-flex items-center text-xs font-medium ${pctChange >= 0 ? 'text-green-primary' : 'text-red'}`}>
+                {pctChange >= 0 ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
+                {Math.abs(pctChange)}%
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-text-muted mt-0.5">Mes anterior: {stats.mesAnterior.total}</p>
+        </div>
+
+        {/* Promedio diario */}
+        <div className="bg-surface rounded-xl border border-border p-4">
+          <div className="flex items-center gap-2 mb-1">
+            <BarChart3 size={16} className="text-text-muted" />
+            <span className="text-xs font-medium text-text-muted uppercase tracking-wide">Promedio/día</span>
+          </div>
+          <span className="text-2xl font-semibold text-text-primary">{stats.promedioDiario}</span>
+          <p className="text-xs text-text-muted mt-0.5">turnos por día este mes</p>
+        </div>
+
+        {/* Tasa show */}
+        <div className="bg-surface rounded-xl border border-border p-4">
+          <div className="flex items-center gap-2 mb-1">
+            <CheckCircle2 size={16} className="text-text-muted" />
+            <span className="text-xs font-medium text-text-muted uppercase tracking-wide">Tasa show</span>
+          </div>
+          <div className="flex items-baseline gap-2">
+            <span className={`text-2xl font-semibold ${stats.mesActual.tasaShow >= 70 ? 'text-green-primary' : stats.mesActual.tasaShow >= 50 ? 'text-amber' : 'text-red'}`}>
+              {stats.mesActual.tasaShow}%
+            </span>
+            {tasaDiff !== 0 && (
+              <span className={`inline-flex items-center text-xs font-medium ${tasaDiff > 0 ? 'text-green-primary' : 'text-red'}`}>
+                {tasaDiff > 0 ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
+                {Math.abs(tasaDiff)}pp
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-text-muted mt-0.5">{stats.mesActual.atendidos} atendidos · {stats.mesActual.noShows} no-shows</p>
+        </div>
+
+        {/* Cancelados */}
+        <div className="bg-surface rounded-xl border border-border p-4">
+          <div className="flex items-center gap-2 mb-1">
+            <Ban size={16} className="text-text-muted" />
+            <span className="text-xs font-medium text-text-muted uppercase tracking-wide">Cancelados</span>
+          </div>
+          <span className="text-2xl font-semibold text-amber">{stats.mesActual.cancelados}</span>
+          <p className="text-xs text-text-muted mt-0.5">
+            {stats.mesActual.total > 0 ? Math.round((stats.mesActual.cancelados / stats.mesActual.total) * 100) : 0}% del total
+          </p>
+        </div>
+      </div>
+
+      {/* Weekly chart */}
+      <div className="bg-surface rounded-xl border border-border p-4">
+        <h3 className="text-sm font-medium text-text-secondary mb-3">Últimos 7 días</h3>
+        <div className="h-[140px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={stats.semana} barGap={2}>
+              <XAxis dataKey="label" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+              <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} width={30} allowDecimals={false} />
+              <Tooltip
+                contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e5e5' }}
+                formatter={(value, name) => [value, name === 'atendidos' ? 'Atendidos' : 'Total']}
+                labelFormatter={(label) => String(label)}
+              />
+              <Bar dataKey="total" fill="#d1d5db" radius={[4, 4, 0, 0]} name="total" />
+              <Bar dataKey="atendidos" fill="#22c55e" radius={[4, 4, 0, 0]} name="atendidos" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
     </div>
   )
 }
@@ -292,7 +484,6 @@ interface Agendado {
   estado: string
   comentario: string
   origen: string
-  fecha_actualizacion: string
 }
 
 const ORIGEN_COLORS: Record<string, { bg: string; text: string }> = {
@@ -306,7 +497,7 @@ const ORIGEN_COLORS: Record<string, { bg: string; text: string }> = {
 
 function AgendadosTab() {
   const [fecha, setFecha] = useState(() => getArgentinaToday())
-  const [data, setData] = useState<{ total: number; total_modificados?: number; max_id_anterior?: number; por_sede: Record<string, number>; por_origen: Record<string, number>; agendados: Agendado[] } | null>(null)
+  const [data, setData] = useState<{ total: number; total_pacientes_nuevos?: number; por_sede: Record<string, number>; por_origen: Record<string, number>; agendados: Agendado[] } | null>(null)
   const [loading, setLoading] = useState(true)
   const [sedeFilter, setSedeFilter] = useState('todas')
   const [busqueda, setBusqueda] = useState('')
@@ -501,9 +692,9 @@ function AgendadosTab() {
           <p className="text-xs text-text-muted mt-3">
             {agendados.length} turno{agendados.length !== 1 ? 's' : ''} dado{agendados.length !== 1 ? 's' : ''}
             {sedeFilter !== 'todas' ? ` en ${sedeFilter}` : ''} · Datos en tiempo real de Dentalink
-            {data.total_modificados != null && data.total_modificados !== data.total && (
+            {data.total_pacientes_nuevos != null && data.total_pacientes_nuevos !== data.total && (
               <span className="ml-2 text-text-muted">
-                ({data.total_modificados} movimientos totales, {data.total} nuevos)
+                ({data.total_pacientes_nuevos} pacientes nuevos registrados)
               </span>
             )}
           </p>

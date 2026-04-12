@@ -26,19 +26,12 @@ interface DentalinkCitaFull {
   fecha_actualizacion: string
 }
 
-function esPrimeraVez(comentario: string): boolean {
-  const c = (comentario || '').toLowerCase()
-  return (
-    c.includes('primera vez') ||
-    c.includes('1ra vez') ||
-    c.includes('1° vez') ||
-    c.includes('1era vez') ||
-    c.includes('primer vez') ||
-    c.includes('primera consulta') ||
-    c.includes('paciente nuevo') ||
-    c.includes('pac nuevo') ||
-    c.includes('pac nueva')
-  )
+interface DentalinkPaciente {
+  id: number
+  nombre: string
+  apellido: string
+  fecha_afiliacion: string
+  [key: string]: unknown
 }
 
 function detectarOrigen(comentario: string): string {
@@ -51,41 +44,8 @@ function detectarOrigen(comentario: string): string {
   return 'Otro'
 }
 
-/**
- * Consulta un paciente individual en Dentalink para obtener su fecha de creación.
- * Devuelve el objeto completo del paciente o null si falla.
- */
-async function fetchPaciente(idPaciente: number): Promise<Record<string, unknown> | null> {
-  try {
-    const res = await fetch(`${API_BASE}/pacientes/${idPaciente}`, {
-      headers: {
-        'Authorization': `Token ${API_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-    })
-    if (!res.ok) return null
-    const json = await res.json()
-    // Dentalink puede devolver { data: {...} } o directamente el objeto
-    return json.data || json
-  } catch {
-    return null
-  }
-}
-
-/**
- * Extrae la fecha (YYYY-MM-DD) de afiliación/alta del paciente en Dentalink.
- */
-function getFechaAltaPaciente(paciente: Record<string, unknown>): string {
-  const valor = paciente['fecha_afiliacion']
-  if (valor && typeof valor === 'string') {
-    // Puede venir como "2026-03-28 10:30:00" o "2026-03-28"
-    return valor.split(' ')[0].split('T')[0]
-  }
-  return ''
-}
-
 export async function GET(request: Request) {
-  // Auth check: solo admin
+  // Auth check: admin y rolA
   const supabase = await createServerClient()
   const { data: { user: authUser } } = await supabase.auth.getUser()
   if (!authUser) {
@@ -96,7 +56,7 @@ export async function GET(request: Request) {
     .select('rol')
     .eq('id', authUser.id)
     .single()
-  if (!profile || profile.rol !== 'admin') {
+  if (!profile || !['admin', 'rolA'].includes(profile.rol)) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
   }
 
@@ -108,52 +68,64 @@ export async function GET(request: Request) {
   }
 
   try {
-    // 1. Traer citas actualizadas en la fecha seleccionada
-    const citasHoy = await fetchPaginado<DentalinkCitaFull>('/citas', {
-      fecha_actualizacion: [
+    // Estrategia: consultar pacientes por fecha_afiliacion (fecha de alta),
+    // que es inmutable, en vez de citas por fecha_actualizacion que cambia
+    // cada vez que se modifica una cita.
+    const pacientes = await fetchPaginado<DentalinkPaciente>('/pacientes', {
+      fecha_afiliacion: [
         { gte: `${fecha} 00:00:00` },
         { lte: `${fecha} 23:59:59` },
       ],
     })
 
-    // 2. Filtrar solo "primera vez" por comentario
-    const citasPrimeraVez = citasHoy.filter(c => esPrimeraVez(c.comentarios))
+    // Para cada paciente nuevo, buscar su primera cita
+    const agendados: Array<{
+      id: number
+      paciente: string
+      fecha_turno: string
+      hora: string
+      profesional: string
+      sede: string
+      id_sucursal: number
+      estado: string
+      comentario: string
+      origen: string
+    }> = []
 
-    // 3. Para cada cita "primera vez", consultar el paciente en Dentalink
-    //    y verificar que fue creado el mismo día (fecha seleccionada)
-    // 3. Para cada cita, consultar fecha_afiliacion del paciente en Dentalink
-    const debugPacientes: Record<number, string> = {}
+    for (const paciente of pacientes) {
+      const citas = await fetchPaginado<DentalinkCitaFull>('/citas', {
+        id_paciente: paciente.id,
+      })
 
-    const citasConFecha: (DentalinkCitaFull & { fecha_afiliacion: string })[] = []
+      // Tomar la primera cita (por fecha/hora)
+      const primera = citas.sort((a, b) => {
+        const da = `${a.fecha} ${a.hora_inicio}`
+        const db = `${b.fecha} ${b.hora_inicio}`
+        return da.localeCompare(db)
+      })[0]
 
-    for (const cita of citasPrimeraVez) {
-      const paciente = await fetchPaciente(cita.id_paciente)
-      const fechaAlta = paciente ? getFechaAltaPaciente(paciente) : ''
+      if (primera) {
+        const nombre = primera.nombre_paciente?.trim() ||
+          [paciente.nombre, paciente.apellido].filter(Boolean).join(' ').trim() ||
+          'Sin nombre'
 
-      debugPacientes[cita.id_paciente] = fechaAlta || 'sin_fecha'
-      citasConFecha.push({ ...cita, fecha_afiliacion: fechaAlta })
+        agendados.push({
+          id: primera.id,
+          paciente: nombre,
+          fecha_turno: primera.fecha,
+          hora: primera.hora_inicio?.slice(0, 5) || '',
+          profesional: primera.nombre_dentista || '',
+          sede: primera.nombre_sucursal || '',
+          id_sucursal: primera.id_sucursal,
+          estado: primera.estado_cita || '',
+          comentario: primera.comentarios || '',
+          origen: detectarOrigen(primera.comentarios),
+        })
+      }
 
       // Rate limiting entre consultas
-      await new Promise(r => setTimeout(r, 200))
+      await new Promise(r => setTimeout(r, 150))
     }
-
-    // 4. Filtrar: solo pacientes afiliados/dados de alta en la fecha seleccionada
-    const citasNuevas = citasConFecha.filter(c => c.fecha_afiliacion === fecha)
-    const metodo = 'primera_vez+fecha_afiliacion'
-
-    const agendados = citasNuevas.map(c => ({
-      id: c.id,
-      paciente: c.nombre_paciente?.trim() || 'Sin nombre',
-      fecha_turno: c.fecha,
-      hora: c.hora_inicio?.slice(0, 5) || '',
-      profesional: c.nombre_dentista || '',
-      sede: c.nombre_sucursal || '',
-      id_sucursal: c.id_sucursal,
-      estado: c.estado_cita || '',
-      comentario: c.comentarios || '',
-      origen: detectarOrigen(c.comentarios),
-      fecha_actualizacion: c.fecha_actualizacion,
-    }))
 
     // Resumen
     const porSede: Record<string, number> = {}
@@ -166,10 +138,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       fecha,
       total: agendados.length,
-      total_modificados: citasHoy.length,
-      total_primera_vez: citasPrimeraVez.length,
-      metodo,
-      debug_pacientes: debugPacientes,
+      total_pacientes_nuevos: pacientes.length,
       por_sede: porSede,
       por_origen: porOrigen,
       agendados,
