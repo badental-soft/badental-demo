@@ -32,6 +32,7 @@ export interface DentalinkCita {
   estado_cita: string
   id_tratamiento: number
   nombre_tratamiento: string
+  comentarios: string
   fecha_actualizacion: string
 }
 
