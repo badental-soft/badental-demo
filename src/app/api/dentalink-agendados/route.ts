@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { fetchPaginado } from '@/lib/dentalink'
+import { getArgentinaToday } from '@/lib/utils/dates'
 
 const API_BASE = process.env.DENTALINK_API_BASE || 'https://api.dentalink.healthatom.com/api/v1'
 const API_TOKEN = process.env.DENTALINK_API_TOKEN || ''
@@ -51,9 +52,6 @@ function detectarOrigen(comentario: string): string {
   return 'Otro'
 }
 
-/**
- * Consulta un paciente individual en Dentalink para obtener su fecha de alta.
- */
 async function fetchPaciente(idPaciente: number): Promise<Record<string, unknown> | null> {
   try {
     const res = await fetch(`${API_BASE}/pacientes/${idPaciente}`, {
@@ -102,20 +100,32 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Usar campo "fecha" (fecha de la cita, inmutable) en vez de
-    // "fecha_actualizacion" que cambia cada vez que se modifica la cita.
+    // "Turnos dados" = pacientes REGISTRADOS en fecha X, sin importar
+    // cuándo es su turno. La clave es fecha_afiliacion del paciente.
+    //
+    // Problema: Dentalink /pacientes no soporta filtro por fecha_afiliacion.
+    // Solución: buscar citas con fecha_actualizacion en una ventana amplia
+    // (fecha → fecha+14d), filtrar "primera vez", y verificar individualmente
+    // que fecha_afiliacion del paciente == fecha seleccionada.
+
+    // Ventana de búsqueda: desde la fecha seleccionada hasta +14 días o hoy
+    const windowEnd = new Date(fecha + 'T12:00:00')
+    windowEnd.setDate(windowEnd.getDate() + 14)
+    const today = getArgentinaToday()
+    const endStr = windowEnd.toISOString().split('T')[0]
+    const effectiveEnd = endStr > today ? today : endStr
+
     const citas = await fetchPaginado<DentalinkCitaFull>('/citas', {
-      fecha: [
-        { gte: `${fecha}` },
-        { lte: `${fecha}` },
+      fecha_actualizacion: [
+        { gte: `${fecha} 00:00:00` },
+        { lte: `${effectiveEnd} 23:59:59` },
       ],
     })
 
-    // Filtrar citas de primera vez por comentario
+    // Filtrar "primera vez" por comentario
     const citasPrimeraVez = citas.filter(c => esPrimeraVez(c.comentarios))
 
-    // Para cada cita primera vez, verificar fecha_afiliacion del paciente
-    // Deduplicar por id_paciente (un paciente puede tener varias citas el mismo día)
+    // Deduplicar por paciente y verificar fecha_afiliacion
     const pacientesVistos = new Set<number>()
     const agendados: Array<{
       id: number
@@ -135,8 +145,11 @@ export async function GET(request: Request) {
       if (pacientesVistos.has(cita.id_paciente)) continue
       pacientesVistos.add(cita.id_paciente)
 
+      // Verificar que el paciente fue creado en la fecha seleccionada
       const paciente = await fetchPaciente(cita.id_paciente)
       const fechaAlta = paciente ? getFechaAltaPaciente(paciente) : ''
+
+      if (fechaAlta !== fecha) continue
 
       agendados.push({
         id: cita.id,
@@ -167,7 +180,8 @@ export async function GET(request: Request) {
     return NextResponse.json({
       fecha,
       total: agendados.length,
-      total_citas_dia: citas.length,
+      total_citas_ventana: citas.length,
+      total_primera_vez: citasPrimeraVez.length,
       por_sede: porSede,
       por_origen: porOrigen,
       agendados,

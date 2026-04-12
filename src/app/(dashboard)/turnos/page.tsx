@@ -57,10 +57,7 @@ export default function TurnosPage() {
         )}
       </div>
 
-      {/* Monthly Analytics — solo admin */}
-      {isAdmin && <TurnosAnalytics syncKey={syncKey} />}
-
-      {/* Tabs — admin y rolA ven "Turnos dados" */}
+      {/* Tabs — admin y rolA ven "Turnos dados" (arriba de analytics) */}
       {(isAdmin || user?.rol === 'rolA') && (
         <div className="flex items-center gap-1 bg-surface border border-border rounded-lg p-1 mb-6 max-w-full overflow-x-auto">
           <button
@@ -87,6 +84,9 @@ export default function TurnosPage() {
           </button>
         </div>
       )}
+
+      {/* Monthly Analytics — solo admin, solo en tab agenda */}
+      {isAdmin && activeTab === 'agenda' && <TurnosAnalytics syncKey={syncKey} />}
 
       {activeTab === 'agenda' && <AgendaTab syncKey={syncKey} />}
       {activeTab === 'agendados' && (isAdmin || user?.rol === 'rolA') && <AgendadosTab />}
@@ -497,7 +497,7 @@ const ORIGEN_COLORS: Record<string, { bg: string; text: string }> = {
 
 function AgendadosTab() {
   const [fecha, setFecha] = useState(() => getArgentinaToday())
-  const [data, setData] = useState<{ total: number; total_citas_dia?: number; por_sede: Record<string, number>; por_origen: Record<string, number>; agendados: Agendado[] } | null>(null)
+  const [data, setData] = useState<{ total: number; total_citas_ventana?: number; total_primera_vez?: number; por_sede: Record<string, number>; por_origen: Record<string, number>; agendados: Agendado[] } | null>(null)
   const [loading, setLoading] = useState(true)
   const [sedeFilter, setSedeFilter] = useState('todas')
   const [busqueda, setBusqueda] = useState('')
@@ -692,9 +692,9 @@ function AgendadosTab() {
           <p className="text-xs text-text-muted mt-3">
             {agendados.length} turno{agendados.length !== 1 ? 's' : ''} dado{agendados.length !== 1 ? 's' : ''}
             {sedeFilter !== 'todas' ? ` en ${sedeFilter}` : ''} · Datos en tiempo real de Dentalink
-            {data.total_citas_dia != null && (
+            {data.total_primera_vez != null && data.total_primera_vez > data.total && (
               <span className="ml-2 text-text-muted">
-                ({data.total_citas_dia} citas totales en el día)
+                ({data.total_primera_vez} primera vez, {data.total} con alta en este día)
               </span>
             )}
           </p>
