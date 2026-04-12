@@ -497,7 +497,7 @@ const ORIGEN_COLORS: Record<string, { bg: string; text: string }> = {
 
 function AgendadosTab() {
   const [fecha, setFecha] = useState(() => getArgentinaToday())
-  const [data, setData] = useState<{ total: number; total_pacientes_nuevos?: number; por_sede: Record<string, number>; por_origen: Record<string, number>; agendados: Agendado[] } | null>(null)
+  const [data, setData] = useState<{ total: number; total_citas_dia?: number; por_sede: Record<string, number>; por_origen: Record<string, number>; agendados: Agendado[] } | null>(null)
   const [loading, setLoading] = useState(true)
   const [sedeFilter, setSedeFilter] = useState('todas')
   const [busqueda, setBusqueda] = useState('')
@@ -692,9 +692,9 @@ function AgendadosTab() {
           <p className="text-xs text-text-muted mt-3">
             {agendados.length} turno{agendados.length !== 1 ? 's' : ''} dado{agendados.length !== 1 ? 's' : ''}
             {sedeFilter !== 'todas' ? ` en ${sedeFilter}` : ''} · Datos en tiempo real de Dentalink
-            {data.total_pacientes_nuevos != null && data.total_pacientes_nuevos !== data.total && (
+            {data.total_citas_dia != null && (
               <span className="ml-2 text-text-muted">
-                ({data.total_pacientes_nuevos} pacientes nuevos registrados)
+                ({data.total_citas_dia} citas totales en el día)
               </span>
             )}
           </p>
