@@ -486,13 +486,143 @@ interface Agendado {
   origen: string
 }
 
-const ORIGEN_COLORS: Record<string, { bg: string; text: string }> = {
-  Instagram: { bg: 'bg-pink-50', text: 'text-pink-600' },
-  Web: { bg: 'bg-blue-50', text: 'text-blue-600' },
-  WhatsApp: { bg: 'bg-emerald-50', text: 'text-emerald-600' },
-  'Teléfono': { bg: 'bg-amber-50', text: 'text-amber-600' },
-  Referido: { bg: 'bg-purple-50', text: 'text-purple-600' },
-  Otro: { bg: 'bg-gray-50', text: 'text-gray-600' },
+const ORIGEN_COLORS: Record<string, { bg: string; text: string; bar: string }> = {
+  Instagram: { bg: 'bg-pink-50', text: 'text-pink-600', bar: '#db2777' },
+  Web: { bg: 'bg-blue-50', text: 'text-blue-600', bar: '#2563eb' },
+  WhatsApp: { bg: 'bg-emerald-50', text: 'text-emerald-600', bar: '#059669' },
+  'Teléfono': { bg: 'bg-amber-50', text: 'text-amber-600', bar: '#d97706' },
+  Referido: { bg: 'bg-purple-50', text: 'text-purple-600', bar: '#7c3aed' },
+  Facebook: { bg: 'bg-indigo-50', text: 'text-indigo-600', bar: '#4f46e5' },
+  Otro: { bg: 'bg-gray-50', text: 'text-gray-600', bar: '#6b7280' },
+}
+
+interface StatsData {
+  dias: Array<{ fecha: string; total: number }>
+  semana_actual: number
+  semana_anterior: number
+  promedio_diario: number
+  por_origen: Record<string, number>
+  por_sede: Record<string, number>
+  total_14d: number
+}
+
+function TurnosDadosAnalytics() {
+  const [stats, setStats] = useState<StatsData | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch('/api/turnos-dados-stats')
+      .then(r => r.json())
+      .then(setStats)
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  if (loading || !stats) return null
+
+  const cambioSemanal = stats.semana_anterior > 0
+    ? Math.round(((stats.semana_actual - stats.semana_anterior) / stats.semana_anterior) * 100)
+    : 0
+  const cambioPositivo = cambioSemanal >= 0
+
+  // Chart data: format dates as "Lun 7"
+  const chartData = stats.dias.map(d => {
+    const date = new Date(d.fecha + 'T12:00:00')
+    const label = date.toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric' })
+    return { name: label, total: d.total }
+  })
+
+  // Origin sorted
+  const origenes = Object.entries(stats.por_origen).sort((a, b) => b[1] - a[1])
+  const totalOrigenes = origenes.reduce((s, [, v]) => s + v, 0)
+
+  return (
+    <div className="mb-6 space-y-4">
+      {/* KPI cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="bg-surface rounded-xl border border-border p-4">
+          <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Esta semana</p>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-text-primary">{stats.semana_actual}</span>
+            {stats.semana_anterior > 0 && (
+              <span className={`flex items-center text-xs font-medium ${cambioPositivo ? 'text-green-600' : 'text-red-500'}`}>
+                {cambioPositivo ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
+                {Math.abs(cambioSemanal)}%
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-text-muted mt-0.5">vs semana anterior ({stats.semana_anterior})</p>
+        </div>
+
+        <div className="bg-surface rounded-xl border border-border p-4">
+          <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Promedio/día</p>
+          <span className="text-2xl font-bold text-text-primary">{stats.promedio_diario}</span>
+          <p className="text-xs text-text-muted mt-0.5">últimos 7 días</p>
+        </div>
+
+        <div className="bg-surface rounded-xl border border-border p-4">
+          <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Top origen</p>
+          <span className="text-2xl font-bold text-text-primary">{origenes[0]?.[0] || '—'}</span>
+          <p className="text-xs text-text-muted mt-0.5">{origenes[0]?.[1] || 0} turnos ({totalOrigenes > 0 ? Math.round((origenes[0]?.[1] || 0) / totalOrigenes * 100) : 0}%)</p>
+        </div>
+
+        <div className="bg-surface rounded-xl border border-border p-4">
+          <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Total 14 días</p>
+          <span className="text-2xl font-bold text-text-primary">{stats.total_14d}</span>
+          <p className="text-xs text-text-muted mt-0.5">pacientes registrados</p>
+        </div>
+      </div>
+
+      {/* Chart + Origin breakdown */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Bar chart */}
+        <div className="lg:col-span-2 bg-surface rounded-xl border border-border p-4">
+          <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
+            <BarChart3 size={16} className="text-green-primary" />
+            Turnos dados por día (14 días)
+          </h3>
+          <div className="h-[200px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData}>
+                <XAxis dataKey="name" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} width={30} allowDecimals={false} />
+                <Tooltip
+                  contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e5e5' }}
+                  formatter={(value) => [value, 'Turnos']}
+                />
+                <Bar dataKey="total" fill="#2d6a4f" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Origin breakdown */}
+        <div className="bg-surface rounded-xl border border-border p-4">
+          <h3 className="text-sm font-semibold text-text-primary mb-3">Distribución por origen</h3>
+          <div className="space-y-2.5">
+            {origenes.map(([origen, count]) => {
+              const pct = totalOrigenes > 0 ? Math.round((count / totalOrigenes) * 100) : 0
+              const color = ORIGEN_COLORS[origen] || ORIGEN_COLORS.Otro
+              return (
+                <div key={origen}>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="font-medium text-text-primary">{origen}</span>
+                    <span className="text-text-muted">{count} ({pct}%)</span>
+                  </div>
+                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{ width: `${pct}%`, backgroundColor: color.bar }}
+                    />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function AgendadosTab() {
@@ -585,6 +715,9 @@ function AgendadosTab() {
           ))}
         </select>
       </div>
+
+      {/* Analytics */}
+      <TurnosDadosAnalytics />
 
       <p className="text-sm text-text-secondary capitalize mb-4">{formatFecha(fecha)}</p>
 
