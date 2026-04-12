@@ -36,19 +36,30 @@ export interface DentalinkCita {
   fecha_actualizacion: string
 }
 
-async function fetchAPI<T>(url: string): Promise<DentalinkResponse<T>> {
-  const res = await fetch(url, {
-    headers: {
-      'Authorization': `Token ${API_TOKEN}`,
-      'Content-Type': 'application/json',
-    },
-  })
+async function fetchAPI<T>(url: string, retries = 3): Promise<DentalinkResponse<T>> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const res = await fetch(url, {
+      headers: {
+        'Authorization': `Token ${API_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+    })
 
-  if (!res.ok) {
-    throw new Error(`Dentalink API error: ${res.status} ${res.statusText}`)
+    if (res.status === 429 && attempt < retries) {
+      const wait = Math.pow(2, attempt + 1) * 1000 // 2s, 4s, 8s
+      console.log(`Dentalink 429 — retry ${attempt + 1} in ${wait}ms`)
+      await new Promise(r => setTimeout(r, wait))
+      continue
+    }
+
+    if (!res.ok) {
+      throw new Error(`Dentalink API error: ${res.status} ${res.statusText}`)
+    }
+
+    return res.json()
   }
 
-  return res.json()
+  throw new Error('Dentalink API: max retries exceeded')
 }
 
 export async function fetchPaginado<T>(endpoint: string, filtros?: Record<string, unknown>): Promise<T[]> {
