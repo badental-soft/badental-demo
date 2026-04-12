@@ -118,16 +118,16 @@ function AdminDashboard() {
       const chartGasQuery = supabase.from('gastos').select('fecha, monto, sede_ids').gte('fecha', inicioMes).lte('fecha', hoy)
       const sedesQuery = supabase.from('sedes').select('*').eq('activa', true).order('nombre')
 
-      // New KPIs: turnos dados hoy, stock bajo, lab pendientes
-      const turnosDadosQuery = supabase.from('pacientes_nuevos').select('id', { count: 'exact', head: true }).eq('fecha_afiliacion', hoy)
+      // New KPIs: turnos dados hoy (via API that triggers Dentalink sync), stock bajo, lab pendientes
+      const turnosDadosPromise = fetch(`/api/dentalink-agendados?fecha=${hoy}`).then(r => r.ok ? r.json() : { total: 0 }).catch(() => ({ total: 0 }))
       const stockProductosQuery = supabase.from('stock_productos').select('id, stock_minimo').eq('activo', true)
       const stockMovQuery = supabase.from('stock_movimientos').select('producto_id, sede_id, tipo, cantidad')
       const labQuery = supabase.from('laboratorio_casos').select('id', { count: 'exact', head: true }).in('estado', ['escaneado', 'enviada', 'en_proceso', 'a_revisar'])
       const gastosHoyQuery = supabase.from('gastos').select('id', { count: 'exact', head: true }).eq('estado', 'pendiente').eq('fecha_vencimiento', hoy)
 
       // Run ALL queries in parallel
-      const [turnosRes, cobHoyRes, cobSemRes, cobMesRes, deudasRes, plantillasRes, completadasTodayRes, empleadosRes, chartCobRes, chartGasRes, sedesRes, turnosDadosRes, stockProdRes, stockMovRes, labRes, gastosHoyRes] = await Promise.all([
-        turnosQuery, cobHoyQuery, cobSemQuery, cobMesQuery, deudasQuery, plantillasQuery, completadasQuery, empleadosQuery, chartCobQuery, chartGasQuery, sedesQuery, turnosDadosQuery, stockProductosQuery, stockMovQuery, labQuery, gastosHoyQuery,
+      const [turnosRes, cobHoyRes, cobSemRes, cobMesRes, deudasRes, plantillasRes, completadasTodayRes, empleadosRes, chartCobRes, chartGasRes, sedesRes, turnosDadosData, stockProdRes, stockMovRes, labRes, gastosHoyRes] = await Promise.all([
+        turnosQuery, cobHoyQuery, cobSemQuery, cobMesQuery, deudasQuery, plantillasQuery, completadasQuery, empleadosQuery, chartCobQuery, chartGasQuery, sedesQuery, turnosDadosPromise, stockProductosQuery, stockMovQuery, labQuery, gastosHoyQuery,
       ])
 
       const allSedes = (sedesRes.data || []) as Sede[]
@@ -203,7 +203,7 @@ function AdminDashboard() {
       setTareasPendientes(pendientes)
 
       // Process turnos dados hoy
-      setTurnosDadosHoy(turnosDadosRes.count || 0)
+      setTurnosDadosHoy(turnosDadosData?.total || 0)
 
       // Process stock bajo: calculate stock per product-sede and count alerts
       const productos = (stockProdRes.data || []) as { id: string; stock_minimo: number }[]
