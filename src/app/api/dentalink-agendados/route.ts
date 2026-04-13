@@ -202,18 +202,10 @@ async function syncPacientesHoy(hoy: string) {
 export async function GET(request: Request) {
   const supabase = await createServerClient()
 
-  // Auth check: admin y rolA
+  // Auth check: any authenticated user
   const { data: { user: authUser } } = await supabase.auth.getUser()
   if (!authUser) {
     return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
-  }
-  const { data: profile } = await supabase
-    .from('users')
-    .select('rol')
-    .eq('id', authUser.id)
-    .single()
-  if (!profile || !['admin', 'rolA'].includes(profile.rol)) {
-    return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
   }
 
   const { searchParams } = new URL(request.url)
