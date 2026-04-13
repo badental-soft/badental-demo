@@ -75,10 +75,17 @@ export default function FinanzasPage() {
           <h1 className="font-display text-2xl font-semibold text-text-primary mb-1">Finanzas</h1>
           <p className="text-sm text-text-secondary hidden sm:block">Cobranzas, deudas pendientes y gastos</p>
         </div>
-        {(activeTab === 'cobranzas') && (
+        {activeTab === 'cobranzas' && (
           <SyncButton
             label="Sync Pagos"
             endpoints={[{ url: '/api/sync-pagos', body: { dias: 7 } }]}
+            onDone={() => setSyncKey(k => k + 1)}
+          />
+        )}
+        {activeTab === 'por-cobrar' && (
+          <SyncButton
+            label="Sync Deudas"
+            endpoints={[{ url: '/api/sync-por-cobrar' }]}
             onDone={() => setSyncKey(k => k + 1)}
           />
         )}
@@ -105,7 +112,7 @@ export default function FinanzasPage() {
       {/* Tab content */}
       {activeTab === 'resumen' && <ResumenTab />}
       {activeTab === 'cobranzas' && <CobranzasTab syncKey={syncKey} />}
-      {activeTab === 'por-cobrar' && <PorCobrarTab />}
+      {activeTab === 'por-cobrar' && <PorCobrarTab syncKey={syncKey} />}
       {activeTab === 'gastos' && <GastosTab />}
     </div>
   )
@@ -968,15 +975,230 @@ function CobranzasTab({ syncKey }: { syncKey: number }) {
 }
 
 // ============================================
-// POR COBRAR TAB (placeholder)
+// POR COBRAR TAB
 // ============================================
-function PorCobrarTab() {
+function PorCobrarTab({ syncKey }: { syncKey: number }) {
+  const supabase = createClient()
+  const [loading, setLoading] = useState(true)
+  const [sedes, setSedes] = useState<Sede[]>([])
+  const [sedeFilter, setSedeFilter] = useState<string>('todas')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [datos, setDatos] = useState<any[]>([])
+  const [search, setSearch] = useState('')
+
+  const hoy = getArgentinaToday()
+
+  const fetchData = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [sedesRes, porCobrarRes] = await Promise.all([
+        supabase.from('sedes').select('*').eq('activa', true).order('nombre'),
+        supabase.from('por_cobrar').select('*').gt('saldo', 0).order('fecha_vencimiento', { ascending: true, nullsFirst: false }),
+      ])
+      if (sedesRes.data) setSedes(sedesRes.data as Sede[])
+      if (porCobrarRes.data) setDatos(porCobrarRes.data)
+    } catch (err) {
+      console.error('Error fetching por cobrar:', err)
+    } finally {
+      setLoading(false)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncKey])
+
+  useEffect(() => { fetchData() }, [fetchData])
+
+  const formatMoney = (n: number) =>
+    n.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0 })
+
+  // Filters
+  const filtrados = datos.filter(d => {
+    if (sedeFilter !== 'todas' && d.sede_id !== sedeFilter) return false
+    if (search) {
+      const s = search.toLowerCase()
+      if (!d.nombre_paciente?.toLowerCase().includes(s) && !d.nombre_tratamiento?.toLowerCase().includes(s)) return false
+    }
+    return true
+  })
+
+  // KPIs
+  const totalPorCobrar = filtrados.reduce((s: number, d: { saldo: number }) => s + Number(d.saldo), 0)
+  const venceHoy = filtrados.filter((d: { fecha_vencimiento: string | null }) => d.fecha_vencimiento === hoy)
+  const montoHoy = venceHoy.reduce((s: number, d: { saldo: number }) => s + Number(d.saldo), 0)
+
+  const en7dias = new Date()
+  en7dias.setDate(en7dias.getDate() + 7)
+  const fecha7 = en7dias.toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' })
+  const venceSemana = filtrados.filter((d: { fecha_vencimiento: string | null }) =>
+    d.fecha_vencimiento && d.fecha_vencimiento >= hoy && d.fecha_vencimiento <= fecha7
+  )
+  const montoSemana = venceSemana.reduce((s: number, d: { saldo: number }) => s + Number(d.saldo), 0)
+
+  const en30dias = new Date()
+  en30dias.setDate(en30dias.getDate() + 30)
+  const fecha30 = en30dias.toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' })
+  const venceMes = filtrados.filter((d: { fecha_vencimiento: string | null }) =>
+    d.fecha_vencimiento && d.fecha_vencimiento >= hoy && d.fecha_vencimiento <= fecha30
+  )
+  const montoMes = venceMes.reduce((s: number, d: { saldo: number }) => s + Number(d.saldo), 0)
+
+  // Split: con fecha y sin fecha
+  const conFecha = filtrados.filter((d: { fecha_vencimiento: string | null }) => d.fecha_vencimiento)
+  const sinFecha = filtrados.filter((d: { fecha_vencimiento: string | null }) => !d.fecha_vencimiento)
+
+  const formatFechaCorta = (f: string) => {
+    const [, m, d] = f.split('-')
+    return `${d}/${m}`
+  }
+
+  const getEstadoVencimiento = (fecha: string | null) => {
+    if (!fecha) return { label: 'Sin fecha', color: 'text-text-muted' }
+    if (fecha < hoy) return { label: 'Vencida', color: 'text-red' }
+    if (fecha === hoy) return { label: 'Hoy', color: 'text-amber' }
+    return { label: formatFechaCorta(fecha), color: 'text-text-secondary' }
+  }
+
+  if (loading) {
+    return <div className="text-center text-text-muted py-12 text-sm">Cargando deudas...</div>
+  }
+
+  if (datos.length === 0) {
+    return (
+      <div className="bg-surface rounded-xl border border-border p-8 text-center">
+        <AlertCircle size={40} className="mx-auto text-text-muted mb-3" />
+        <h3 className="text-lg font-semibold text-text-primary mb-2">Sin datos</h3>
+        <p className="text-sm text-text-secondary max-w-md mx-auto">
+          Usá el botón &quot;Sync Deudas&quot; para traer los tratamientos pendientes de Dentalink.
+        </p>
+      </div>
+    )
+  }
+
   return (
-    <div className="bg-surface rounded-xl border border-border p-8 text-center">
-      <AlertCircle size={40} className="mx-auto text-text-muted mb-3" />
-      <h3 className="text-lg font-semibold text-text-primary mb-2">Por Cobrar</h3>
-      <p className="text-sm text-text-secondary max-w-md mx-auto">
-        Deudas y saldos pendientes de pacientes. Este modulo se activara cuando se carguen los datos desde el Excel de deudas.
+    <div>
+      {/* KPIs */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+        <div className="bg-surface rounded-xl border border-border p-4">
+          <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Vence hoy</p>
+          <p className={`text-xl font-semibold ${montoHoy > 0 ? 'text-amber' : 'text-green-primary'}`}>{formatMoney(montoHoy)}</p>
+          <p className="text-xs text-text-secondary">{venceHoy.length} cuota{venceHoy.length !== 1 ? 's' : ''}</p>
+        </div>
+        <div className="bg-surface rounded-xl border border-border p-4">
+          <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Próximos 7 días</p>
+          <p className="text-xl font-semibold text-blue">{formatMoney(montoSemana)}</p>
+          <p className="text-xs text-text-secondary">{venceSemana.length} cuota{venceSemana.length !== 1 ? 's' : ''}</p>
+        </div>
+        <div className="bg-surface rounded-xl border border-border p-4">
+          <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Próximos 30 días</p>
+          <p className="text-xl font-semibold text-purple">{formatMoney(montoMes)}</p>
+          <p className="text-xs text-text-secondary">{venceMes.length} cuota{venceMes.length !== 1 ? 's' : ''}</p>
+        </div>
+        <div className="bg-surface rounded-xl border border-border p-4">
+          <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Total por cobrar</p>
+          <p className="text-xl font-semibold text-gold-dark">{formatMoney(totalPorCobrar)}</p>
+          <p className="text-xs text-text-secondary">{filtrados.length} registro{filtrados.length !== 1 ? 's' : ''}</p>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <select
+          value={sedeFilter}
+          onChange={e => setSedeFilter(e.target.value)}
+          className="text-sm border border-border rounded-lg px-2 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-green-primary"
+        >
+          <option value="todas">Todas las sedes</option>
+          {sedes.map(s => (
+            <option key={s.id} value={s.id}>{s.nombre}</option>
+          ))}
+        </select>
+        <input
+          type="text"
+          placeholder="Buscar paciente..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="text-sm border border-border rounded-lg px-3 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-green-primary w-48"
+        />
+      </div>
+
+      {/* Cuotas con fecha */}
+      {conFecha.length > 0 && (
+        <div className="bg-surface rounded-xl border border-border overflow-hidden mb-4">
+          <div className="px-4 py-3 border-b border-border">
+            <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
+              <CalendarClock size={16} className="text-text-muted" />
+              Cuotas programadas ({conFecha.length})
+            </h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-beige/50">
+                  <th className="text-left px-4 py-2 font-medium text-text-muted">Vencimiento</th>
+                  <th className="text-left px-4 py-2 font-medium text-text-muted">Paciente</th>
+                  <th className="text-left px-4 py-2 font-medium text-text-muted hidden sm:table-cell">Tratamiento</th>
+                  <th className="text-left px-4 py-2 font-medium text-text-muted hidden md:table-cell">Sede</th>
+                  <th className="text-left px-4 py-2 font-medium text-text-muted hidden sm:table-cell">Cuota</th>
+                  <th className="text-right px-4 py-2 font-medium text-text-muted">Saldo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {conFecha.map((d: { id: string; fecha_vencimiento: string; nombre_paciente: string; nombre_tratamiento: string; nombre_sucursal: string; numero_cuota: number; total_cuotas: number; saldo: number; monto: number }) => {
+                  const estado = getEstadoVencimiento(d.fecha_vencimiento)
+                  return (
+                    <tr key={d.id} className="border-b border-border/50 hover:bg-beige/30">
+                      <td className={`px-4 py-2.5 font-medium ${estado.color}`}>{estado.label}</td>
+                      <td className="px-4 py-2.5 text-text-primary">{d.nombre_paciente}</td>
+                      <td className="px-4 py-2.5 text-text-secondary hidden sm:table-cell">{d.nombre_tratamiento || '—'}</td>
+                      <td className="px-4 py-2.5 text-text-secondary hidden md:table-cell">{d.nombre_sucursal || '—'}</td>
+                      <td className="px-4 py-2.5 text-text-secondary hidden sm:table-cell">
+                        {d.numero_cuota && d.total_cuotas ? `${d.numero_cuota}/${d.total_cuotas}` : '—'}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-medium text-text-primary">{formatMoney(Number(d.saldo))}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Deudas sin plan de cuotas */}
+      {sinFecha.length > 0 && (
+        <div className="bg-surface rounded-xl border border-border overflow-hidden">
+          <div className="px-4 py-3 border-b border-border">
+            <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
+              <AlertCircle size={16} className="text-text-muted" />
+              Deudas sin plan de cuotas ({sinFecha.length})
+            </h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-beige/50">
+                  <th className="text-left px-4 py-2 font-medium text-text-muted">Paciente</th>
+                  <th className="text-left px-4 py-2 font-medium text-text-muted hidden sm:table-cell">Tratamiento</th>
+                  <th className="text-left px-4 py-2 font-medium text-text-muted hidden md:table-cell">Sede</th>
+                  <th className="text-right px-4 py-2 font-medium text-text-muted">Deuda</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sinFecha.map((d: { id: string; nombre_paciente: string; nombre_tratamiento: string; nombre_sucursal: string; saldo: number }) => (
+                  <tr key={d.id} className="border-b border-border/50 hover:bg-beige/30">
+                    <td className="px-4 py-2.5 text-text-primary">{d.nombre_paciente}</td>
+                    <td className="px-4 py-2.5 text-text-secondary hidden sm:table-cell">{d.nombre_tratamiento || '—'}</td>
+                    <td className="px-4 py-2.5 text-text-secondary hidden md:table-cell">{d.nombre_sucursal || '—'}</td>
+                    <td className="px-4 py-2.5 text-right font-medium text-red">{formatMoney(Number(d.saldo))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <p className="text-xs text-text-muted mt-3">
+        {filtrados.length} registro{filtrados.length !== 1 ? 's' : ''} · Total pendiente: {formatMoney(totalPorCobrar)}
       </p>
     </div>
   )

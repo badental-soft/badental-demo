@@ -220,12 +220,86 @@ export async function GET(request: Request) {
       console.error('Error sync pacientes:', pacError)
     }
 
+    // ── 4. Sync por cobrar (tratamientos con deuda) ──────────
+    let porCobrarRows = 0
+    try {
+      interface Tratamiento { id: number; nombre: string; id_paciente: number; nombre_paciente: string; id_sucursal: number; nombre_sucursal: string; deuda: number; bloqueado: boolean }
+      interface Descuento { id: number; cuotas: number; total: number }
+      interface Cuota { id: number; numero_cuota: number; fecha_vencimiento: string; total: number; pagado: number; por_pagar: number }
+
+      const tratamientos = await fetchPaginado<Tratamiento>('/tratamientos', {
+        finalizado: { eq: '0' },
+      })
+      const conDeuda = tratamientos.filter(t => t.deuda > 0 && !t.bloqueado && SUCURSAL_MAP[t.id_sucursal])
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rows: any[] = []
+      for (let i = 0; i < conDeuda.length; i += 5) {
+        const batch = conDeuda.slice(i, i + 5)
+        const descResults = await Promise.all(
+          batch.map(async (t) => {
+            try {
+              const descs = await fetchPaginado<Descuento>(`/tratamientos/${t.id}/descuentos`)
+              return { t, descs }
+            } catch { return { t, descs: [] as Descuento[] } }
+          })
+        )
+        for (const { t, descs } of descResults) {
+          let tieneCuotas = false
+          for (const d of descs) {
+            if (d.cuotas > 0) {
+              try {
+                const cuotas = await fetchPaginado<Cuota>(`/tratamientos/${t.id}/descuentos/${d.id}/cuotas`)
+                const pendientes = cuotas.filter(c => c.por_pagar > 0)
+                if (pendientes.length > 0) {
+                  tieneCuotas = true
+                  for (const c of pendientes) {
+                    rows.push({
+                      id_tratamiento: t.id, id_paciente: t.id_paciente,
+                      nombre_paciente: t.nombre_paciente?.trim() || 'Sin nombre',
+                      nombre_tratamiento: t.nombre, id_sucursal: t.id_sucursal,
+                      nombre_sucursal: t.nombre_sucursal, sede_id: SUCURSAL_MAP[t.id_sucursal],
+                      fecha_vencimiento: c.fecha_vencimiento || null,
+                      monto: c.total, pagado: c.pagado, saldo: c.por_pagar,
+                      numero_cuota: c.numero_cuota, total_cuotas: d.cuotas,
+                    })
+                  }
+                }
+              } catch { /* skip */ }
+            }
+          }
+          if (!tieneCuotas) {
+            rows.push({
+              id_tratamiento: t.id, id_paciente: t.id_paciente,
+              nombre_paciente: t.nombre_paciente?.trim() || 'Sin nombre',
+              nombre_tratamiento: t.nombre, id_sucursal: t.id_sucursal,
+              nombre_sucursal: t.nombre_sucursal, sede_id: SUCURSAL_MAP[t.id_sucursal],
+              fecha_vencimiento: null, monto: t.deuda, pagado: 0, saldo: t.deuda,
+              numero_cuota: null, total_cuotas: null,
+            })
+          }
+        }
+        if (i + 5 < conDeuda.length) await new Promise(r => setTimeout(r, 500))
+      }
+
+      await supabase.from('por_cobrar').delete().gte('id', '00000000-0000-0000-0000-000000000000')
+      for (let i = 0; i < rows.length; i += 500) {
+        const batch = rows.slice(i, i + 500)
+        const { error } = await supabase.from('por_cobrar').insert(batch)
+        if (error) console.error('por_cobrar insert error:', error.message)
+        else porCobrarRows += batch.length
+      }
+    } catch (porCobrarError) {
+      console.error('Error sync por cobrar:', porCobrarError)
+    }
+
     const result = {
       ok: true,
       fecha: fechaHoy,
       turnos: turnosInserted,
       pagos: pagosInserted,
       pacientes_nuevos: pacientesNuevos,
+      por_cobrar: porCobrarRows,
     }
     console.log('Cron sync-diario:', JSON.stringify(result))
 
