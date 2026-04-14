@@ -122,7 +122,12 @@ function AdminDashboard() {
       const sedesQuery = supabase.from('sedes').select('*').eq('activa', true).order('nombre')
 
       // New KPIs: turnos dados hoy (via API that triggers Dentalink sync), stock bajo, lab pendientes
-      const turnosDadosPromise = fetch(`/api/dentalink-agendados?fecha=${hoy}`).then(r => r.ok ? r.json() : { total: 0 }).catch(() => ({ total: 0 }))
+      const agendadosCtrl = new AbortController()
+      const agendadosTimeout = setTimeout(() => agendadosCtrl.abort(), 10000)
+      const turnosDadosPromise = fetch(`/api/dentalink-agendados?fecha=${hoy}`, { signal: agendadosCtrl.signal })
+        .then(r => r.ok ? r.json() : { total: 0 })
+        .catch(() => ({ total: 0 }))
+        .finally(() => clearTimeout(agendadosTimeout))
       const stockProductosQuery = supabase.from('stock_productos').select('id, stock_minimo').eq('activo', true)
       const stockMovQuery = supabase.from('stock_movimientos').select('producto_id, sede_id, tipo, cantidad')
       const labQuery = supabase.from('laboratorio_casos').select('id', { count: 'exact', head: true }).in('estado', ['escaneado', 'enviada', 'en_proceso', 'a_revisar'])

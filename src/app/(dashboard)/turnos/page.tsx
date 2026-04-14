@@ -653,7 +653,10 @@ function AgendadosTab() {
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/dentalink-agendados?fecha=${fecha}`)
+      const ctrl = new AbortController()
+      const timeout = setTimeout(() => ctrl.abort(), 10000)
+      const res = await fetch(`/api/dentalink-agendados?fecha=${fecha}`, { signal: ctrl.signal })
+      clearTimeout(timeout)
       const json = await res.json()
       if (res.ok) {
         setData(json)
