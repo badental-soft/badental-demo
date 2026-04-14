@@ -85,8 +85,15 @@ export default function TurnosPage() {
         </div>
       )}
 
-      {activeTab === 'agenda' && <AgendaTab syncKey={syncKey} showAnalytics={isAdmin} />}
-      {activeTab === 'agendados' && (isAdmin || user?.rol === 'rolA') && <AgendadosTab />}
+      {/* Keep tabs mounted to preserve state */}
+      <div style={{ display: activeTab === 'agenda' ? 'block' : 'none' }}>
+        <AgendaTab syncKey={syncKey} showAnalytics={isAdmin} />
+      </div>
+      {(isAdmin || user?.rol === 'rolA') && (
+        <div style={{ display: activeTab === 'agendados' ? 'block' : 'none' }}>
+          <AgendadosTab />
+        </div>
+      )}
     </div>
   )
 }

@@ -182,8 +182,8 @@ export default function StockModule() {
         </div>
       )}
 
-      {/* Content */}
-      {activeTab === 'resumen' && (
+      {/* Content — keep mounted to preserve state */}
+      <div style={{ display: activeTab === 'resumen' ? 'block' : 'none' }}>
         <StockResumen
           stockMap={stockMap}
           sedes={sedes}
@@ -193,8 +193,8 @@ export default function StockModule() {
           productoFilter={productoFilter}
           setProductoFilter={setProductoFilter}
         />
-      )}
-      {activeTab === 'movimientos' && (
+      </div>
+      <div style={{ display: activeTab === 'movimientos' ? 'block' : 'none' }}>
         <MovimientosView
           movimientos={movimientos}
           sedes={sedes}
@@ -204,12 +204,14 @@ export default function StockModule() {
           productoFilter={productoFilter}
           setProductoFilter={setProductoFilter}
         />
-      )}
-      {activeTab === 'productos' && canManage && (
-        <ProductosView
-          productos={todosProductos}
-          onRefresh={fetchData}
-        />
+      </div>
+      {canManage && (
+        <div style={{ display: activeTab === 'productos' ? 'block' : 'none' }}>
+          <ProductosView
+            productos={todosProductos}
+            onRefresh={fetchData}
+          />
+        </div>
       )}
 
       {/* Modal */}

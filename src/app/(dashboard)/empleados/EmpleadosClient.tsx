@@ -68,12 +68,28 @@ export default function EmpleadosPage() {
         ))}
       </div>
 
-      {/* Tab content */}
-      {activeTab === 'dashboard' && !isAdmin && <EmpleadoDashboard />}
-      {activeTab === 'tareas' && <TareasTab isAdmin={isAdmin} />}
-      {activeTab === 'turnos' && !isAdmin && <TurnosEmpleadoTab />}
-      {activeTab === 'turnos-agendados' && isAdmin && <TurnosAgendadosTab />}
-      {activeTab === 'horas' && <HorasTab isAdmin={isAdmin} />}
+      {/* Tab content — keep mounted to preserve state across tab switches */}
+      {!isAdmin && (
+        <div style={{ display: activeTab === 'dashboard' ? 'block' : 'none' }}>
+          <EmpleadoDashboard />
+        </div>
+      )}
+      <div style={{ display: activeTab === 'tareas' ? 'block' : 'none' }}>
+        <TareasTab isAdmin={isAdmin} />
+      </div>
+      {!isAdmin && (
+        <div style={{ display: activeTab === 'turnos' ? 'block' : 'none' }}>
+          <TurnosEmpleadoTab />
+        </div>
+      )}
+      {isAdmin && (
+        <div style={{ display: activeTab === 'turnos-agendados' ? 'block' : 'none' }}>
+          <TurnosAgendadosTab />
+        </div>
+      )}
+      <div style={{ display: activeTab === 'horas' ? 'block' : 'none' }}>
+        <HorasTab isAdmin={isAdmin} />
+      </div>
     </div>
   )
 }

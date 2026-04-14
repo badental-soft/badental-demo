@@ -83,17 +83,20 @@ function AdminDashboard() {
   const [labPendientes, setLabPendientes] = useState(0)
   const [gastosVencenHoy, setGastosVencenHoy] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [fetchError, setFetchError] = useState<string | null>(null)
 
   const hoy = getArgentinaToday()
 
   const fetchSedes = useCallback(async () => {
-    const { data } = await supabase.from('sedes').select('*').eq('activa', true).order('nombre')
+    const { data, error } = await supabase.from('sedes').select('*').eq('activa', true).order('nombre')
+    if (error) console.error('Error fetching sedes:', error)
     if (data) setSedes(data)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const fetchDashboardData = useCallback(async () => {
     setLoading(true)
+    setFetchError(null)
     try {
       const inicioSemana = getInicioSemana()
       const inicioMes = hoy.slice(0, 7) + '-01'
@@ -129,6 +132,14 @@ function AdminDashboard() {
       const [turnosRes, cobHoyRes, cobSemRes, cobMesRes, deudasRes, plantillasRes, completadasTodayRes, empleadosRes, chartCobRes, chartGasRes, sedesRes, turnosDadosData, stockProdRes, stockMovRes, labRes, gastosHoyRes] = await Promise.all([
         turnosQuery, cobHoyQuery, cobSemQuery, cobMesQuery, deudasQuery, plantillasQuery, completadasQuery, empleadosQuery, chartCobQuery, chartGasQuery, sedesQuery, turnosDadosPromise, stockProductosQuery, stockMovQuery, labQuery, gastosHoyQuery,
       ])
+
+      // Check for errors on critical queries
+      const queryResults = [turnosRes, cobHoyRes, cobSemRes, cobMesRes, deudasRes, plantillasRes, completadasTodayRes, empleadosRes, chartCobRes, chartGasRes, sedesRes, stockProdRes, stockMovRes]
+      const errors = queryResults.map(r => r.error).filter(Boolean)
+      if (errors.length > 0) {
+        console.error('Dashboard query errors:', errors)
+        setFetchError('Algunas consultas fallaron. Los datos pueden estar incompletos.')
+      }
 
       const allSedes = (sedesRes.data || []) as Sede[]
       if (allSedes.length > 0) setSedes(allSedes)
@@ -249,6 +260,7 @@ function AdminDashboard() {
       })))
     } catch (err) {
       console.error('Error fetching dashboard:', err)
+      setFetchError('Error al cargar el dashboard. Intentá recargar la página.')
     } finally {
       setLoading(false)
     }
@@ -306,6 +318,16 @@ function AdminDashboard() {
         </select>
         <span className="text-sm text-text-secondary capitalize sm:hidden">{formatFechaHoy()}</span>
       </div>
+
+      {fetchError && (
+        <div className="bg-red-light rounded-lg border border-red/20 px-4 py-3 mb-4 flex items-center gap-2">
+          <AlertTriangle size={16} className="text-red shrink-0" />
+          <p className="text-sm text-red">{fetchError}</p>
+          <button onClick={() => fetchDashboardData()} className="ml-auto text-sm text-green-primary hover:text-green-dark font-medium whitespace-nowrap">
+            Reintentar
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <div className="text-center text-text-muted py-12 text-sm">Cargando dashboard...</div>

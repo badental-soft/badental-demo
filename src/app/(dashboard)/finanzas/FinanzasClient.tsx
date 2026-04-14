@@ -64,8 +64,22 @@ const TIPO_PAGO_LABELS: Record<string, { label: string; icon: React.ReactNode; b
 }
 
 export default function FinanzasPage() {
+  const supabase = createClient()
   const [activeTab, setActiveTab] = useState<TabId>('resumen')
   const [syncKey, setSyncKey] = useState(0)
+  const [sedes, setSedes] = useState<Sede[]>([])
+
+  // Fetch sedes once at parent level — shared across all tabs
+  useEffect(() => {
+    supabase.from('sedes').select('*').eq('activa', true).order('nombre').then(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ({ data, error }: { data: any; error: any }) => {
+        if (error) console.error('Error fetching sedes:', error)
+        if (data) setSedes(data as Sede[])
+      }
+    )
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <div>
@@ -109,11 +123,19 @@ export default function FinanzasPage() {
         ))}
       </div>
 
-      {/* Tab content */}
-      {activeTab === 'resumen' && <ResumenTab />}
-      {activeTab === 'cobranzas' && <CobranzasTab syncKey={syncKey} />}
-      {activeTab === 'por-cobrar' && <PorCobrarTab syncKey={syncKey} />}
-      {activeTab === 'gastos' && <GastosTab />}
+      {/* Tab content — keep all tabs mounted so state persists across switches */}
+      <div style={{ display: activeTab === 'resumen' ? 'block' : 'none' }}>
+        <ResumenTab sedes={sedes} />
+      </div>
+      <div style={{ display: activeTab === 'cobranzas' ? 'block' : 'none' }}>
+        <CobranzasTab syncKey={syncKey} sedes={sedes} />
+      </div>
+      <div style={{ display: activeTab === 'por-cobrar' ? 'block' : 'none' }}>
+        <PorCobrarTab syncKey={syncKey} sedes={sedes} />
+      </div>
+      <div style={{ display: activeTab === 'gastos' ? 'block' : 'none' }}>
+        <GastosTab sedes={sedes} />
+      </div>
     </div>
   )
 }
@@ -121,10 +143,9 @@ export default function FinanzasPage() {
 // ============================================
 // RESUMEN TAB
 // ============================================
-function ResumenTab() {
+function ResumenTab({ sedes }: { sedes: Sede[] }) {
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
-  const [sedes, setSedes] = useState<Sede[]>([])
   const [sedeFilter, setSedeFilter] = useState<string>('todas')
   const [cobradoMes, setCobradoMes] = useState(0)
   const [cobradoHoy, setCobradoHoy] = useState(0)
@@ -132,36 +153,37 @@ function ResumenTab() {
   const [gastosMesPendiente, setGastosMesPendiente] = useState(0)
   const [deudasPendientes, setDeudasPendientes] = useState(0)
   const [proximosVencimientos, setProximosVencimientos] = useState<{ id: string; concepto: string; monto: number; fecha_vencimiento: string; categoria: string; sede_ids?: string[] }[]>([])
+  const [fetchError, setFetchError] = useState<string | null>(null)
 
   const hoy = getArgentinaToday()
   const mesActual = hoy.slice(0, 7)
 
-  const fetchSedes = useCallback(async () => {
-    const { data } = await supabase.from('sedes').select('*').eq('activa', true).order('nombre')
-    if (data) setSedes(data)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   const fetchResumen = useCallback(async () => {
     setLoading(true)
+    setFetchError(null)
     try {
       const inicioMes = mesActual + '-01'
       const [y, m] = mesActual.split('-').map(Number)
       const lastDay = new Date(y, m, 0).getDate()
       const finMes = `${mesActual}-${String(lastDay).padStart(2, '0')}`
 
-      const [cobMesRes, cobHoyRes, gastosMesRes, deudasRes, vencimientosRes, sedesRes] = await Promise.all([
+      const [cobMesRes, cobHoyRes, gastosMesRes, deudasRes, vencimientosRes] = await Promise.all([
         supabase.from('cobranzas').select('monto, sede_id, sede_ids').gte('fecha', inicioMes).lte('fecha', finMes),
         supabase.from('cobranzas').select('monto, sede_id, sede_ids').eq('fecha', hoy),
         supabase.from('gastos').select('monto, estado, sede_ids').gte('fecha', inicioMes).lte('fecha', finMes),
         supabase.from('deudas').select('monto_total, monto_cobrado, sede_id').in('estado', ['pendiente', 'parcial']),
         supabase.from('gastos').select('id, concepto, monto, fecha_vencimiento, categoria, sede_ids').eq('estado', 'pendiente').not('fecha_vencimiento', 'is', null).gte('fecha_vencimiento', hoy).order('fecha_vencimiento', { ascending: true }).limit(10),
-        supabase.from('sedes').select('*').eq('activa', true).order('nombre'),
       ])
 
-      const allSedes = (sedesRes.data || []) as Sede[]
-      if (allSedes.length > 0) setSedes(allSedes)
-      const sedesCount = allSedes.length || 1
+      // Check for errors on any query
+      const errors = [cobMesRes, cobHoyRes, gastosMesRes, deudasRes, vencimientosRes]
+        .map(r => r.error).filter(Boolean)
+      if (errors.length > 0) {
+        console.error('Resumen query errors:', errors)
+        setFetchError('Error al cargar datos. Intentá recargar la página.')
+      }
+
+      const sedesCount = sedes.length || 1
 
       // Helper: calculate proportional monto for cobranza given sede filter
       const cobMonto = (c: { monto: number; sede_id?: string | null; sede_ids?: string[] }, filter: string): number => {
@@ -219,9 +241,8 @@ function ResumenTab() {
       setLoading(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hoy, mesActual, sedeFilter])
+  }, [hoy, mesActual, sedeFilter, sedes])
 
-  useEffect(() => { fetchSedes() }, [fetchSedes])
   useEffect(() => { fetchResumen() }, [fetchResumen])
 
   const formatMoney = (n: number) =>
@@ -238,6 +259,18 @@ function ResumenTab() {
 
   if (loading) {
     return <div className="text-center text-text-muted py-12 text-sm">Cargando resumen...</div>
+  }
+
+  if (fetchError) {
+    return (
+      <div className="bg-red-light rounded-xl border border-red/20 p-6 text-center">
+        <AlertCircle size={24} className="mx-auto text-red mb-2" />
+        <p className="text-sm text-red">{fetchError}</p>
+        <button onClick={() => fetchResumen()} className="mt-3 text-sm text-green-primary hover:text-green-dark font-medium">
+          Reintentar
+        </button>
+      </div>
+    )
   }
 
   return (
@@ -384,11 +417,10 @@ function ResumenTab() {
 // ============================================
 // COBRANZAS TAB (fully functional)
 // ============================================
-function CobranzasTab({ syncKey }: { syncKey: number }) {
+function CobranzasTab({ syncKey, sedes }: { syncKey: number; sedes: Sede[] }) {
   const { user } = useAuth()
   const supabase = createClient()
   const [cobranzas, setCobranzas] = useState<CobranzaConSede[]>([])
-  const [sedes, setSedes] = useState<Sede[]>([])
   const [loading, setLoading] = useState(true)
   const [fecha, setFecha] = useState(() => getArgentinaToday())
   const [sedeFilter, setSedeFilter] = useState<string>('todas')
@@ -412,12 +444,6 @@ function CobranzasTab({ syncKey }: { syncKey: number }) {
     tipo_cambio: '',
   })
 
-  const fetchSedes = useCallback(async () => {
-    const { data } = await supabase.from('sedes').select('*').eq('activa', true).order('nombre')
-    if (data) setSedes(data)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   const fetchCobranzas = useCallback(async () => {
     setLoading(true)
     try {
@@ -433,7 +459,8 @@ function CobranzasTab({ syncKey }: { syncKey: number }) {
         query = query.eq('sede_id', user.sede_id)
       }
 
-      const { data } = await query
+      const { data, error } = await query
+      if (error) console.error('Error fetching cobranzas:', error)
       setCobranzas((data as CobranzaConSede[]) || [])
     } catch (err) {
       console.error('Error fetching cobranzas:', err)
@@ -443,7 +470,6 @@ function CobranzasTab({ syncKey }: { syncKey: number }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fecha, user, syncKey])
 
-  useEffect(() => { fetchSedes() }, [fetchSedes])
   useEffect(() => { fetchCobranzas() }, [fetchCobranzas])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -977,10 +1003,9 @@ function CobranzasTab({ syncKey }: { syncKey: number }) {
 // ============================================
 // POR COBRAR TAB
 // ============================================
-function PorCobrarTab({ syncKey }: { syncKey: number }) {
+function PorCobrarTab({ syncKey, sedes }: { syncKey: number; sedes: Sede[] }) {
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
-  const [sedes, setSedes] = useState<Sede[]>([])
   const [sedeFilter, setSedeFilter] = useState<string>('todas')
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [datos, setDatos] = useState<any[]>([])
@@ -991,12 +1016,11 @@ function PorCobrarTab({ syncKey }: { syncKey: number }) {
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
-      const [sedesRes, porCobrarRes] = await Promise.all([
-        supabase.from('sedes').select('*').eq('activa', true).order('nombre'),
-        supabase.from('por_cobrar').select('*').gt('saldo', 0).order('fecha_vencimiento', { ascending: true, nullsFirst: false }),
-      ])
-      if (sedesRes.data) setSedes(sedesRes.data as Sede[])
-      if (porCobrarRes.data) setDatos(porCobrarRes.data)
+      const { data, error } = await supabase
+        .from('por_cobrar').select('*').gt('saldo', 0)
+        .order('fecha_vencimiento', { ascending: true, nullsFirst: false })
+      if (error) console.error('Error fetching por cobrar:', error)
+      if (data) setDatos(data)
     } catch (err) {
       console.error('Error fetching por cobrar:', err)
     } finally {
@@ -1252,12 +1276,11 @@ interface GastoRow {
   created_at: string
 }
 
-function GastosTab() {
+function GastosTab({ sedes }: { sedes: Sede[] }) {
   const { user } = useAuth()
   const supabase = createClient()
 
   const [gastos, setGastos] = useState<GastoRow[]>([])
-  const [sedes, setSedes] = useState<Sede[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -1290,12 +1313,6 @@ function GastosTab() {
     tipo_cambio: '',
   })
 
-  const fetchSedes = useCallback(async () => {
-    const { data } = await supabase.from('sedes').select('*').eq('activa', true).order('nombre')
-    if (data) setSedes(data)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   const fetchGastos = useCallback(async () => {
     setLoading(true)
     try {
@@ -1327,7 +1344,6 @@ function GastosTab() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mesFilter, catFilter, estadoFilter])
 
-  useEffect(() => { fetchSedes() }, [fetchSedes])
   useEffect(() => { fetchGastos() }, [fetchGastos])
 
   const handleSubmit = async (e: React.FormEvent) => {
