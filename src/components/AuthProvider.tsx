@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { User } from '@/types/database'
 
@@ -8,7 +8,7 @@ interface AuthContextType {
   user: User | null
   loading: boolean
   signOut: () => Promise<void>
-  dataVersion: number // increments on session recovery — triggers data refetch in pages
+  dataVersion: number
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -49,11 +49,18 @@ function triggerSync() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ dias: 7 }),
   }).catch(() => {})
-  // Sync pacientes nuevos del día (trae fecha_afiliacion de Dentalink en vivo)
   const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' })
   fetch(`/api/dentalink-agendados?fecha=${hoy}`).catch(() => {})
-  // Sync por cobrar (tratamientos con deuda desde Dentalink)
   fetch('/api/sync-por-cobrar', { method: 'POST' }).catch(() => {})
+}
+
+function clearSupabaseCookies() {
+  document.cookie.split(';').forEach(c => {
+    const name = c.trim().split('=')[0]
+    if (name.startsWith('sb-')) {
+      document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`
+    }
+  })
 }
 
 export function AuthProvider({ children, initialUser }: { children: React.ReactNode; initialUser: User | null }) {
@@ -61,6 +68,7 @@ export function AuthProvider({ children, initialUser }: { children: React.ReactN
   const [loading, setLoading] = useState(false)
   const [dataVersion, setDataVersion] = useState(0)
   const supabase = createClient()
+  const isRecovering = useRef(false)
 
   // Auto-sync on page load for admin (with 30min cooldown)
   useEffect(() => {
@@ -70,33 +78,36 @@ export function AuthProvider({ children, initialUser }: { children: React.ReactN
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Listen for auth state changes from Supabase
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: string) => {
       if (event === 'SIGNED_OUT') {
         setUser(null)
       } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        const { data: { user: authUser } } = await supabase.auth.getUser()
-        if (authUser) {
-          const { data: profile } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', authUser.id)
-            .single()
-          setUser(profile)
+        try {
+          const { data: { user: authUser } } = await supabase.auth.getUser()
+          if (authUser) {
+            const { data: profile } = await supabase
+              .from('users')
+              .select('*')
+              .eq('id', authUser.id)
+              .single()
+            setUser(profile)
 
-          // Redirect to password change if needed
-          if (profile?.must_change_password && typeof window !== 'undefined' && !window.location.pathname.includes('cambiar-clave')) {
-            window.location.href = '/cambiar-clave'
-            return
-          }
+            if (profile?.must_change_password && typeof window !== 'undefined' && !window.location.pathname.includes('cambiar-clave')) {
+              window.location.href = '/cambiar-clave'
+              return
+            }
 
-          // Auto-sync on login (admin only)
-          if (event === 'SIGNED_IN' && profile?.rol === 'admin' && shouldAutoSync()) {
-            triggerSync()
+            if (event === 'SIGNED_IN' && profile?.rol === 'admin' && shouldAutoSync()) {
+              triggerSync()
+            }
           }
+        } catch (err) {
+          console.error('Error handling auth state change:', err)
         }
 
-        // Session was refreshed after expiry — tell pages to refetch data
+        // Session was refreshed — tell pages to refetch their data
         if (event === 'TOKEN_REFRESHED') {
           setDataVersion(v => v + 1)
         }
@@ -107,32 +118,57 @@ export function AuthProvider({ children, initialUser }: { children: React.ReactN
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Recover session when user returns to the tab after being away
+  // Recover session when user returns to the tab after being away.
   // Browsers throttle timers in background tabs, so Supabase's auto-refresh
-  // may not fire. This forces a refresh as soon as the tab is visible again.
+  // may miss its window. We force a session check on tab focus.
+  // IMPORTANT: This uses a ref guard to prevent race conditions with navigation.
+  const recoverSession = useCallback(async () => {
+    if (isRecovering.current) return
+    isRecovering.current = true
+
+    try {
+      // First, try to refresh the session (cheap, reads cookies + refreshes if needed)
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+
+      if (sessionError || !session) {
+        // No session at all — redirect to login
+        clearSupabaseCookies()
+        window.location.href = '/login'
+        return
+      }
+
+      // Check if the access token is expired
+      const now = Math.floor(Date.now() / 1000)
+      if (session.expires_at && session.expires_at < now) {
+        // Token expired — force a refresh using the refresh token
+        const { error: refreshError } = await supabase.auth.refreshSession()
+        if (refreshError) {
+          // Refresh token also expired — must re-login
+          console.error('Session refresh failed:', refreshError.message)
+          clearSupabaseCookies()
+          window.location.href = '/login'
+          return
+        }
+        // refreshSession triggers TOKEN_REFRESHED via onAuthStateChange,
+        // which increments dataVersion and triggers page refetches.
+      }
+    } catch (err) {
+      console.error('Error recovering session:', err)
+    } finally {
+      isRecovering.current = false
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        supabase.auth.getUser().then(({ error }: { error: any }) => {
-          if (error) {
-            // Session truly expired (refresh token invalid) — force re-login
-            console.error('Session expired, redirecting to login:', error.message)
-            document.cookie.split(';').forEach(c => {
-              const name = c.trim().split('=')[0]
-              if (name.startsWith('sb-')) {
-                document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`
-              }
-            })
-            window.location.href = '/login'
-          }
-        })
+        recoverSession()
       }
     }
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [recoverSession])
 
   const handleSignOut = async () => {
     try {
@@ -140,13 +176,7 @@ export function AuthProvider({ children, initialUser }: { children: React.ReactN
     } catch (err) {
       console.error('Error signing out:', err)
     }
-    // Force-clear all Supabase auth cookies so middleware doesn't redirect back
-    document.cookie.split(';').forEach(c => {
-      const name = c.trim().split('=')[0]
-      if (name.startsWith('sb-')) {
-        document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`
-      }
-    })
+    clearSupabaseCookies()
     window.location.href = '/login'
   }
 

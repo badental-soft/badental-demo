@@ -34,23 +34,24 @@ export async function updateSession(request: NextRequest) {
   const pathname = request.nextUrl.pathname
   const isPublicRoute = pathname.startsWith('/login') || pathname.startsWith('/api/') || pathname.startsWith('/cambiar-clave')
 
-  // If no session and not on public route, redirect to login
-  if (!session && !isPublicRoute) {
+  // Check if session JWT is expired (applies to ALL routes)
+  const isExpired = session?.expires_at
+    ? session.expires_at < Math.floor(Date.now() / 1000)
+    : false
+
+  // If no session (or expired) and not on public route, redirect to login
+  if ((!session || isExpired) && !isPublicRoute) {
+    if (isExpired) {
+      // Clear the stale session so we don't loop
+      await supabase.auth.signOut()
+    }
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
   }
 
-  // If session exists and user is on login page, redirect to dashboard
-  // But first verify the session is not expired to prevent redirect loops
-  if (session && pathname.startsWith('/login')) {
-    const expiresAt = session.expires_at
-    const now = Math.floor(Date.now() / 1000)
-    if (expiresAt && expiresAt < now) {
-      // Session expired — clear it and stay on login
-      await supabase.auth.signOut()
-      return supabaseResponse
-    }
+  // If valid session and user is on login page, redirect to dashboard
+  if (session && !isExpired && pathname.startsWith('/login')) {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
     return NextResponse.redirect(url)
