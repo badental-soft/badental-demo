@@ -1,20 +1,20 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react'
+import { createContext, useContext, useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { User } from '@/types/database'
 
 interface AuthContextType {
   user: User | null
   loading: boolean
-  signOut: () => Promise<void>
+  signOut: () => void
   dataVersion: number
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: true,
-  signOut: async () => {},
+  signOut: () => {},
   dataVersion: 0,
 })
 
@@ -54,13 +54,15 @@ function triggerSync() {
   fetch('/api/sync-por-cobrar', { method: 'POST' }).catch(() => {})
 }
 
-function clearSupabaseCookies() {
+function forceLogout() {
+  // Clear ALL Supabase cookies without any API calls
   document.cookie.split(';').forEach(c => {
     const name = c.trim().split('=')[0]
     if (name.startsWith('sb-')) {
       document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`
     }
   })
+  window.location.href = '/login'
 }
 
 export function AuthProvider({ children, initialUser }: { children: React.ReactNode; initialUser: User | null }) {
@@ -68,7 +70,7 @@ export function AuthProvider({ children, initialUser }: { children: React.ReactN
   const [loading, setLoading] = useState(false)
   const [dataVersion, setDataVersion] = useState(0)
   const supabase = createClient()
-  const isRecovering = useRef(false)
+  const hiddenAtRef = useRef(0)
 
   // Auto-sync on page load for admin (with 30min cooldown)
   useEffect(() => {
@@ -118,66 +120,39 @@ export function AuthProvider({ children, initialUser }: { children: React.ReactN
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Recover session when user returns to the tab after being away.
-  // Browsers throttle timers in background tabs, so Supabase's auto-refresh
-  // may miss its window. We force a session check on tab focus.
-  // IMPORTANT: This uses a ref guard to prevent race conditions with navigation.
-  const recoverSession = useCallback(async () => {
-    if (isRecovering.current) return
-    isRecovering.current = true
-
-    try {
-      // First, try to refresh the session (cheap, reads cookies + refreshes if needed)
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-
-      if (sessionError || !session) {
-        // No session at all — redirect to login
-        clearSupabaseCookies()
-        window.location.href = '/login'
-        return
-      }
-
-      // Check if the access token is expired
-      const now = Math.floor(Date.now() / 1000)
-      if (session.expires_at && session.expires_at < now) {
-        // Token expired — force a refresh using the refresh token
-        const { error: refreshError } = await supabase.auth.refreshSession()
-        if (refreshError) {
-          // Refresh token also expired — must re-login
-          console.error('Session refresh failed:', refreshError.message)
-          clearSupabaseCookies()
-          window.location.href = '/login'
-          return
-        }
-        // refreshSession triggers TOKEN_REFRESHED via onAuthStateChange,
-        // which increments dataVersion and triggers page refetches.
-      }
-    } catch (err) {
-      console.error('Error recovering session:', err)
-    } finally {
-      isRecovering.current = false
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
+  // When the tab goes to background and comes back, stale connections and
+  // expired tokens can make the entire app unresponsive.
+  // Strategy: hard reload after extended absence (guaranteed clean state),
+  // quick refresh for shorter absences.
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        recoverSession()
+      if (document.visibilityState === 'hidden') {
+        hiddenAtRef.current = Date.now()
+      } else if (document.visibilityState === 'visible' && hiddenAtRef.current > 0) {
+        const elapsed = Date.now() - hiddenAtRef.current
+        hiddenAtRef.current = 0
+
+        if (elapsed > 60_000) {
+          // > 1 minute away: hard reload for clean state
+          // (stale connections, expired tokens, frozen JS — all fixed)
+          window.location.reload()
+        } else if (elapsed > 5_000) {
+          // 5s-1min away: bump dataVersion to trigger refetches
+          // Supabase's internal auto-refresh handles the token
+          setDataVersion(v => v + 1)
+        }
+        // < 5s: do nothing, everything should still be fine
       }
     }
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
-  }, [recoverSession])
+  }, [])
 
-  const handleSignOut = async () => {
-    try {
-      await supabase.auth.signOut()
-    } catch (err) {
-      console.error('Error signing out:', err)
-    }
-    clearSupabaseCookies()
-    window.location.href = '/login'
+  // Logout: NEVER await API calls that might hang.
+  // Use scope:'local' to skip the server revocation call, then clear cookies.
+  const handleSignOut = () => {
+    supabase.auth.signOut({ scope: 'local' }).catch(() => {})
+    forceLogout()
   }
 
   return (

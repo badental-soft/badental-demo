@@ -41,13 +41,16 @@ export async function updateSession(request: NextRequest) {
 
   // If no session (or expired) and not on public route, redirect to login
   if ((!session || isExpired) && !isPublicRoute) {
-    if (isExpired) {
-      // Clear the stale session so we don't loop
-      await supabase.auth.signOut()
-    }
     const url = request.nextUrl.clone()
     url.pathname = '/login'
-    return NextResponse.redirect(url)
+    const response = NextResponse.redirect(url)
+    // Clear stale auth cookies directly (no API call that might hang)
+    request.cookies.getAll().forEach(cookie => {
+      if (cookie.name.startsWith('sb-')) {
+        response.cookies.set(cookie.name, '', { maxAge: 0, path: '/' })
+      }
+    })
+    return response
   }
 
   // If valid session and user is on login page, redirect to dashboard
