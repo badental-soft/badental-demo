@@ -71,16 +71,16 @@ export async function GET(request: Request) {
 
   try {
     const supabase = getSupabaseAdmin()
-    const hoy = new Date()
 
-    // Rango: 7 días atrás + 30 adelante (para turnos)
-    const desde = new Date()
-    desde.setDate(hoy.getDate() - 7)
-    const hasta = new Date()
-    hasta.setDate(hoy.getDate() + 30)
+    // Usar timezone Argentina para todas las fechas
+    const fechaHoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' })
+    const hoyDate = new Date(fechaHoy + 'T12:00:00')
+    const desde = new Date(hoyDate)
+    desde.setDate(hoyDate.getDate() - 7)
+    const hasta = new Date(hoyDate)
+    hasta.setDate(hoyDate.getDate() + 30)
     const fechaDesde = desde.toISOString().split('T')[0]
     const fechaHasta = hasta.toISOString().split('T')[0]
-    const fechaHoy = hoy.toISOString().split('T')[0]
 
     // ── 1. Sync turnos ─────────────────────────────────────
     const citas = await fetchPaginado<DentalinkCita>('/citas', {
@@ -199,9 +199,9 @@ export async function GET(request: Request) {
 
     // ── 5. Resumen diario por Telegram ─────────────────────
     try {
-      const manana = new Date(hoy)
-      manana.setDate(hoy.getDate() + 1)
-      const fechaManana = manana.toISOString().split('T')[0]
+      const mananaDate = new Date(hoyDate)
+      mananaDate.setDate(hoyDate.getDate() + 1)
+      const fechaManana = mananaDate.toISOString().split('T')[0]
 
       // Cobranzas hoy
       const { data: cobranzasHoy } = await supabase
@@ -289,7 +289,7 @@ export async function GET(request: Request) {
       // Formatear fecha bonita
       const diasSemana = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
       const meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
-      const fechaBonita = `${diasSemana[hoy.getDay()]} ${hoy.getDate()} ${meses[hoy.getMonth()]}`
+      const fechaBonita = `${diasSemana[hoyDate.getDay()]} ${hoyDate.getDate()} ${meses[hoyDate.getMonth()]}`
 
       // Armar mensaje
       let msg = `📊 *Resumen diario — ${fechaBonita}*\n\n`

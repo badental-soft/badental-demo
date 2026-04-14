@@ -10,12 +10,12 @@ export async function GET() {
     return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
   }
 
-  // Get last 14 days of data
-  const hoy = new Date()
-  const hace14 = new Date()
-  hace14.setDate(hoy.getDate() - 13)
+  // Get last 14 days of data (Argentina timezone)
+  const fechaHoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' })
+  const hoyDate = new Date(fechaHoy + 'T12:00:00')
+  const hace14 = new Date(hoyDate)
+  hace14.setDate(hoyDate.getDate() - 13)
   const fechaDesde = hace14.toISOString().split('T')[0]
-  const fechaHoy = hoy.toISOString().split('T')[0]
 
   const { data: pacientes, error } = await supabase
     .from('pacientes_nuevos')
