@@ -436,7 +436,7 @@ function AgendaTab({ syncKey, showAnalytics }: { syncKey: number; showAnalytics?
         <StatCard icon={<CheckCircle2 size={18} />} label="Atendidos" value={atendidos} color="text-green-primary" />
         <StatCard icon={<XCircle size={18} />} label="No asistió" value={noShows} color="text-red" />
         <StatCard icon={<Ban size={18} />} label="Cancelados" value={cancelados} color="text-amber" />
-        <StatCard icon={<RefreshCw size={18} />} label="Reprogramados" value={reprogramados} color="text-purple-600" />
+        <StatCard icon={<RefreshCw size={18} />} label="Reprogram." value={reprogramados} color="text-purple-600" />
         <StatCard icon={<Users size={18} />} label="Tasa show" value={`${tasaShow}%`} color="text-green-primary" />
       </div>
 
