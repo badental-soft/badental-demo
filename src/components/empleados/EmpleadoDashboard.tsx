@@ -112,7 +112,7 @@ export default function EmpleadoDashboard() {
 // Panel: Resumen (tareas + horas)
 // ============================================
 function ResumenPanel() {
-  const { user, dataVersion } = useAuth()
+  const { user } = useAuth()
   const supabase = createClient()
 
   const [totalTareas, setTotalTareas] = useState(0)
@@ -232,7 +232,7 @@ function ResumenPanel() {
       setLoading(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id, dataVersion])
+  }, [user?.id])
 
   useEffect(() => { fetchData() }, [fetchData])
 

@@ -8,14 +8,12 @@ interface AuthContextType {
   user: User | null
   loading: boolean
   signOut: () => void
-  dataVersion: number
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: true,
   signOut: () => {},
-  dataVersion: 0,
 })
 
 export function useAuth() {
@@ -68,7 +66,6 @@ function forceLogout() {
 export function AuthProvider({ children, initialUser }: { children: React.ReactNode; initialUser: User | null }) {
   const [user, setUser] = useState<User | null>(initialUser)
   const [loading, setLoading] = useState(false)
-  const [dataVersion, setDataVersion] = useState(0)
   const supabase = createClient()
   const hiddenAtRef = useRef(0)
 
@@ -81,11 +78,16 @@ export function AuthProvider({ children, initialUser }: { children: React.ReactN
   }, [])
 
   // Listen for auth state changes from Supabase
+  // IMPORTANT: Do NOT trigger re-fetches or set user to null here.
+  // - SIGNED_OUT from Supabase often fires on transient refresh failures
+  //   (e.g. stale TCP connections after tab switch). Manual logout uses
+  //   forceLogout() which handles the redirect directly.
+  // - TOKEN_REFRESHED is an internal auth concern. The data is already
+  //   loaded and visible — re-fetching it risks hanging on stale connections.
+  // - SIGNED_IN is the only event that needs action (initial login).
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: string) => {
-      if (event === 'SIGNED_OUT') {
-        setUser(null)
-      } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+      if (event === 'SIGNED_IN') {
         try {
           const { data: { user: authUser } } = await supabase.auth.getUser()
           if (authUser) {
@@ -101,19 +103,17 @@ export function AuthProvider({ children, initialUser }: { children: React.ReactN
               return
             }
 
-            if (event === 'SIGNED_IN' && profile?.rol === 'admin' && shouldAutoSync()) {
+            if (profile?.rol === 'admin' && shouldAutoSync()) {
               triggerSync()
             }
           }
         } catch (err) {
-          console.error('Error handling auth state change:', err)
-        }
-
-        // Session was refreshed — tell pages to refetch their data
-        if (event === 'TOKEN_REFRESHED') {
-          setDataVersion(v => v + 1)
+          console.error('Error handling SIGNED_IN:', err)
         }
       }
+      // TOKEN_REFRESHED: do nothing — data stays visible, no re-fetches
+      // SIGNED_OUT: do nothing — manual logout uses forceLogout() directly.
+      //   If session is truly expired, middleware redirects on next navigation.
     })
 
     return () => subscription.unsubscribe()
@@ -152,7 +152,7 @@ export function AuthProvider({ children, initialUser }: { children: React.ReactN
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, signOut: handleSignOut, dataVersion }}>
+    <AuthContext.Provider value={{ user, loading, signOut: handleSignOut }}>
       {children}
     </AuthContext.Provider>
   )

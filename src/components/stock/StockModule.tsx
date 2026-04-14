@@ -31,7 +31,7 @@ type ViewTab = 'resumen' | 'movimientos' | 'productos'
 // ── Main Component ───────────────────────────────────
 
 export default function StockModule() {
-  const { user, dataVersion } = useAuth()
+  const { user } = useAuth()
   const supabase = createClient()
 
   const [activeTab, setActiveTab] = useState<ViewTab>('resumen')
@@ -100,7 +100,7 @@ export default function StockModule() {
       setLoading(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dataVersion])
+  }, [])
 
   useEffect(() => { fetchData() }, [fetchData])
 

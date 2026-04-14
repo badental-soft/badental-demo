@@ -44,7 +44,7 @@ function nextEstado(current: EstadoLaboratorio): EstadoLaboratorio | null {
 }
 
 export default function LaboratorioClient() {
-  const { user, dataVersion } = useAuth()
+  const { user } = useAuth()
   const supabase = createClient()
   const [casos, setCasos] = useState<LaboratorioCaso[]>([])
   const [sedes, setSedes] = useState<Sede[]>([])
@@ -81,7 +81,7 @@ export default function LaboratorioClient() {
       setLoading(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtroEstado, filtroSede, dataVersion])
+  }, [filtroEstado, filtroSede])
 
   const fetchSedes = useCallback(async () => {
     const { data } = await supabase.from('sedes').select('*').eq('activa', true).order('nombre')

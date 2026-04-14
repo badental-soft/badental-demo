@@ -65,7 +65,7 @@ const ROL_LABELS: Record<string, string> = {
 }
 
 export default function TareasTab({ isAdmin }: { isAdmin: boolean }) {
-  const { user, dataVersion } = useAuth()
+  const { user } = useAuth()
   const supabase = createClient()
   const [plantillas, setPlantillas] = useState<Plantilla[]>([])
   const [completadas, setCompletadas] = useState<Completada[]>([])
@@ -91,7 +91,7 @@ export default function TareasTab({ isAdmin }: { isAdmin: boolean }) {
     const { data } = await query
     if (data) setPlantillas(data)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin, user?.rol, dataVersion])
+  }, [isAdmin, user?.rol])
 
   // Fetch employees (admin only)
   const fetchEmpleados = useCallback(async () => {

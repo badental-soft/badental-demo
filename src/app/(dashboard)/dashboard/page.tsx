@@ -68,7 +68,7 @@ function EmpleadoDashboardWrapper() {
 }
 
 function AdminDashboard() {
-  const { user, dataVersion } = useAuth()
+  const { user } = useAuth()
   const supabase = createClient()
   const [sedes, setSedes] = useState<Sede[]>([])
   const [sedeFilter, setSedeFilter] = useState<string>('todas')
@@ -270,7 +270,7 @@ function AdminDashboard() {
       setLoading(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hoy, sedeFilter, dataVersion])
+  }, [hoy, sedeFilter])
 
   useEffect(() => { fetchSedes() }, [fetchSedes])
   useEffect(() => { fetchDashboardData() }, [fetchDashboardData])
