@@ -77,48 +77,15 @@ export function AuthProvider({ children, initialUser }: { children: React.ReactN
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Listen for auth state changes from Supabase
-  // IMPORTANT: Do NOT trigger re-fetches or set user to null here.
-  // - SIGNED_OUT from Supabase often fires on transient refresh failures
-  //   (e.g. stale TCP connections after tab switch). Manual logout uses
-  //   forceLogout() which handles the redirect directly.
-  // - TOKEN_REFRESHED is an internal auth concern. The data is already
-  //   loaded and visible — re-fetching it risks hanging on stale connections.
-  // - SIGNED_IN is the only event that needs action (initial login).
-  useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: string) => {
-      if (event === 'SIGNED_IN') {
-        try {
-          const { data: { user: authUser } } = await supabase.auth.getUser()
-          if (authUser) {
-            const { data: profile } = await supabase
-              .from('users')
-              .select('*')
-              .eq('id', authUser.id)
-              .single()
-            setUser(profile)
-
-            if (profile?.must_change_password && typeof window !== 'undefined' && !window.location.pathname.includes('cambiar-clave')) {
-              window.location.href = '/cambiar-clave'
-              return
-            }
-
-            if (profile?.rol === 'admin' && shouldAutoSync()) {
-              triggerSync()
-            }
-          }
-        } catch (err) {
-          console.error('Error handling SIGNED_IN:', err)
-        }
-      }
-      // TOKEN_REFRESHED: do nothing — data stays visible, no re-fetches
-      // SIGNED_OUT: do nothing — manual logout uses forceLogout() directly.
-      //   If session is truly expired, middleware redirects on next navigation.
-    })
-
-    return () => subscription.unsubscribe()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  // DO NOT use onAuthStateChange here.
+  // Supabase's _recoverAndRefresh() fires SIGNED_IN on EVERY visibility
+  // change (tab switch). That was triggering setUser(newObject) → new user
+  // reference → components with `user` in useEffect deps re-fetched →
+  // setLoading(true) → "Cargando..." forever on stale connections.
+  //
+  // The initialUser prop from the server component is all we need.
+  // Login happens on /login page (outside this provider).
+  // Session expiry is caught by middleware on next navigation.
 
   // When the tab goes to background and comes back, stale HTTP connections
   // cause fetch() calls to hang forever. The SAFEST strategy:
