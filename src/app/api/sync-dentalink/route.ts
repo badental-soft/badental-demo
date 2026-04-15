@@ -79,18 +79,23 @@ export async function POST(request: Request) {
         dentalink_id: c.id,
       }))
 
-    await supabase
+    const { error: deleteError } = await supabase
       .from('turnos')
       .delete()
       .not('dentalink_id', 'is', null)
       .gte('fecha', fechaDesde)
       .lte('fecha', fechaHasta)
 
+    if (deleteError) {
+      console.error('Delete error:', deleteError)
+      throw new Error(`Error borrando turnos antes de sync: ${deleteError.message}`)
+    }
+
     const batchSize = 500
     let inserted = 0
     for (let i = 0; i < turnos.length; i += batchSize) {
       const batch = turnos.slice(i, i + batchSize)
-      const { error } = await supabase.from('turnos').insert(batch)
+      const { error } = await supabase.from('turnos').upsert(batch, { onConflict: 'dentalink_id' })
       if (error) {
         console.error('Insert error:', error)
         throw new Error(`Error insertando turnos: ${error.message}`)

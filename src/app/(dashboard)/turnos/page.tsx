@@ -103,11 +103,11 @@ export default function TurnosPage() {
 // ============================================
 // Analytics: Resumen mensual de turnos
 // ============================================
-function TurnosAnalytics({ syncKey }: { syncKey: number }) {
+function TurnosAnalytics({ syncKey, sedeFilter }: { syncKey: number; sedeFilter: string }) {
   const supabase = createClient()
   const [stats, setStats] = useState<{
     mesActual: { total: number; atendidos: number; noShows: number; cancelados: number; tasaShow: number }
-    mesAnterior: { total: number; atendidos: number; tasaShow: number }
+    mesAnterior: { total: number; tasaShow: number }
     promedioDiario: number
     semana: Array<{ dia: string; label: string; total: number; atendidos: number }>
   } | null>(null)
@@ -139,13 +139,17 @@ function TurnosAnalytics({ syncKey }: { syncKey: number }) {
       const semanaStart = dias7[0]
       const semanaEnd = dias7[6]
 
-      const [resMes, resPrev, resSemana] = await Promise.all([
-        supabase.from('turnos').select('estado').gte('fecha', mesStart).lte('fecha', mesEnd),
-        supabase.from('turnos').select('estado').gte('fecha', prevStart).lte('fecha', prevEnd),
-        supabase.from('turnos').select('fecha, estado').gte('fecha', semanaStart).lte('fecha', semanaEnd),
-      ])
+      let qMes = supabase.from('turnos').select('estado').gte('fecha', mesStart).lte('fecha', mesEnd)
+      let qPrev = supabase.from('turnos').select('estado').gte('fecha', prevStart).lte('fecha', prevEnd)
+      let qSemana = supabase.from('turnos').select('fecha, estado').gte('fecha', semanaStart).lte('fecha', semanaEnd)
+      if (sedeFilter !== 'todas') {
+        qMes = qMes.eq('sede_id', sedeFilter)
+        qPrev = qPrev.eq('sede_id', sedeFilter)
+        qSemana = qSemana.eq('sede_id', sedeFilter)
+      }
 
-      // Check for query errors
+      const [resMes, resPrev, resSemana] = await Promise.all([qMes, qPrev, qSemana])
+
       if (resMes.error) console.error('Error fetching turnos mes:', resMes.error)
       if (resPrev.error) console.error('Error fetching turnos prev:', resPrev.error)
       if (resSemana.error) console.error('Error fetching turnos semana:', resSemana.error)
@@ -154,7 +158,6 @@ function TurnosAnalytics({ syncKey }: { syncKey: number }) {
       const turnosPrev = (resPrev.data || []) as unknown as { estado: string }[]
       const turnosSemana = (resSemana.data || []) as unknown as { fecha: string; estado: string }[]
 
-      // Current month stats
       const mesTotal = turnosMes.length
       const mesAtendidos = turnosMes.filter(t => t.estado === 'atendido').length
       const mesNoShows = turnosMes.filter(t => t.estado === 'no_asistio').length
@@ -162,18 +165,15 @@ function TurnosAnalytics({ syncKey }: { syncKey: number }) {
       const mesEfectivos = mesAtendidos + mesNoShows
       const mesTasaShow = mesEfectivos > 0 ? Math.round((mesAtendidos / mesEfectivos) * 100) : 0
 
-      // Days elapsed in month (up to today)
       const diaHoy = parseInt(hoy.split('-')[2])
       const promedioDiario = diaHoy > 0 ? Math.round(mesTotal / diaHoy) : 0
 
-      // Previous month stats
       const prevTotal = turnosPrev.length
       const prevAtendidos = turnosPrev.filter(t => t.estado === 'atendido').length
       const prevNoShows = turnosPrev.filter(t => t.estado === 'no_asistio').length
       const prevEfectivos = prevAtendidos + prevNoShows
       const prevTasaShow = prevEfectivos > 0 ? Math.round((prevAtendidos / prevEfectivos) * 100) : 0
 
-      // Weekly chart data
       const semana = dias7.map(dia => {
         const turnosDia = turnosSemana.filter(t => t.fecha === dia)
         const d = new Date(dia + 'T12:00:00')
@@ -187,7 +187,7 @@ function TurnosAnalytics({ syncKey }: { syncKey: number }) {
 
       setStats({
         mesActual: { total: mesTotal, atendidos: mesAtendidos, noShows: mesNoShows, cancelados: mesCancelados, tasaShow: mesTasaShow },
-        mesAnterior: { total: prevTotal, atendidos: prevAtendidos, tasaShow: prevTasaShow },
+        mesAnterior: { total: prevTotal, tasaShow: prevTasaShow },
         promedioDiario,
         semana,
       })
@@ -195,15 +195,11 @@ function TurnosAnalytics({ syncKey }: { syncKey: number }) {
       console.error('Error fetching turnos analytics:', err)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [syncKey])
+  }, [syncKey, sedeFilter])
 
   useEffect(() => { fetchStats() }, [fetchStats])
 
   if (!stats) return null
-
-  const pctChange = stats.mesAnterior.total > 0
-    ? Math.round(((stats.mesActual.total - stats.mesAnterior.total) / stats.mesAnterior.total) * 100)
-    : null
 
   const tasaDiff = stats.mesActual.tasaShow - stats.mesAnterior.tasaShow
 
@@ -211,26 +207,9 @@ function TurnosAnalytics({ syncKey }: { syncKey: number }) {
 
   return (
     <div className="mb-6">
+      <p className="text-xs text-text-muted mb-2 uppercase tracking-wide">Resumen mensual — {mesLabel}</p>
       {/* KPIs row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-        {/* Total mes */}
-        <div className="bg-surface rounded-xl border border-border p-4">
-          <div className="flex items-center gap-2 mb-1">
-            <CalendarDays size={16} className="text-text-muted" />
-            <span className="text-xs font-medium text-text-muted uppercase tracking-wide">Total {mesLabel}</span>
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-semibold text-text-primary">{stats.mesActual.total}</span>
-            {pctChange !== null && (
-              <span className={`inline-flex items-center text-xs font-medium ${pctChange >= 0 ? 'text-green-primary' : 'text-red'}`}>
-                {pctChange >= 0 ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
-                {Math.abs(pctChange)}%
-              </span>
-            )}
-          </div>
-          <p className="text-xs text-text-muted mt-0.5">Mes anterior: {stats.mesAnterior.total}</p>
-        </div>
-
+      <div className="grid grid-cols-3 gap-3 mb-4">
         {/* Promedio diario */}
         <div className="bg-surface rounded-xl border border-border p-4">
           <div className="flex items-center gap-2 mb-1">
@@ -413,7 +392,7 @@ function AgendaTab({ syncKey, showAnalytics }: { syncKey: number; showAnalytics?
       </div>
 
       {/* Monthly Analytics — after date/sede selectors */}
-      {showAnalytics && <TurnosAnalytics syncKey={syncKey} />}
+      {showAnalytics && <TurnosAnalytics syncKey={syncKey} sedeFilter={sedeFilter} />}
 
       <p className="text-sm text-text-secondary capitalize mb-4">{formatFecha(fecha)}</p>
 
@@ -526,19 +505,22 @@ interface StatsData {
   por_origen: Record<string, number>
   por_sede: Record<string, number>
   total_14d: number
+  total_mes: number
+  total_mes_anterior: number
 }
 
-function TurnosDadosAnalytics() {
+function TurnosDadosAnalytics({ sedeFilter }: { sedeFilter: string }) {
   const [stats, setStats] = useState<StatsData | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/api/turnos-dados-stats')
+    const params = sedeFilter && sedeFilter !== 'todas' ? `?sede=${encodeURIComponent(sedeFilter)}` : ''
+    fetch(`/api/turnos-dados-stats${params}`)
       .then(r => r.json())
       .then(setStats)
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [])
+  }, [sedeFilter])
 
   if (loading || !stats) return null
 
@@ -546,6 +528,7 @@ function TurnosDadosAnalytics() {
     ? Math.round(((stats.semana_actual - stats.semana_anterior) / stats.semana_anterior) * 100)
     : 0
   const cambioPositivo = cambioSemanal >= 0
+  const mesLabel = new Date(getArgentinaToday() + 'T12:00:00').toLocaleDateString('es-AR', { month: 'long' })
 
   // Chart data: format dates as "Lun 7"
   const chartData = stats.dias.map(d => {
@@ -563,6 +546,26 @@ function TurnosDadosAnalytics() {
       {/* KPI cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="bg-surface rounded-xl border border-border p-4">
+          <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Total {mesLabel}</p>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-text-primary">{stats.total_mes}</span>
+            {stats.total_mes_anterior > 0 && (
+              <span className={`flex items-center text-xs font-medium ${stats.total_mes >= stats.total_mes_anterior ? 'text-green-600' : 'text-red-500'}`}>
+                {stats.total_mes >= stats.total_mes_anterior ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
+                {Math.abs(Math.round(((stats.total_mes - stats.total_mes_anterior) / stats.total_mes_anterior) * 100))}%
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-text-muted mt-0.5">Mes anterior: {stats.total_mes_anterior}</p>
+        </div>
+
+        <div className="bg-surface rounded-xl border border-border p-4">
+          <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Promedio/día</p>
+          <span className="text-2xl font-bold text-text-primary">{stats.promedio_diario}</span>
+          <p className="text-xs text-text-muted mt-0.5">últimos 7 días</p>
+        </div>
+
+        <div className="bg-surface rounded-xl border border-border p-4">
           <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Esta semana</p>
           <div className="flex items-baseline gap-2">
             <span className="text-2xl font-bold text-text-primary">{stats.semana_actual}</span>
@@ -577,21 +580,9 @@ function TurnosDadosAnalytics() {
         </div>
 
         <div className="bg-surface rounded-xl border border-border p-4">
-          <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Promedio/día</p>
-          <span className="text-2xl font-bold text-text-primary">{stats.promedio_diario}</span>
-          <p className="text-xs text-text-muted mt-0.5">últimos 7 días</p>
-        </div>
-
-        <div className="bg-surface rounded-xl border border-border p-4">
           <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Top origen</p>
           <span className="text-2xl font-bold text-text-primary">{origenes[0]?.[0] || '—'}</span>
           <p className="text-xs text-text-muted mt-0.5">{origenes[0]?.[1] || 0} turnos ({totalOrigenes > 0 ? Math.round((origenes[0]?.[1] || 0) / totalOrigenes * 100) : 0}%)</p>
-        </div>
-
-        <div className="bg-surface rounded-xl border border-border p-4">
-          <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Total 14 días</p>
-          <span className="text-2xl font-bold text-text-primary">{stats.total_14d}</span>
-          <p className="text-xs text-text-muted mt-0.5">pacientes registrados</p>
         </div>
       </div>
 
@@ -742,7 +733,7 @@ function AgendadosTab() {
       </div>
 
       {/* Analytics */}
-      <TurnosDadosAnalytics />
+      <TurnosDadosAnalytics sedeFilter={sedeFilter} />
 
       <p className="text-sm text-text-secondary capitalize mb-4">{formatFecha(fecha)}</p>
 

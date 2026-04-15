@@ -103,16 +103,21 @@ export async function GET(request: Request) {
           dentalink_id: c.id,
         }))
 
-      await supabase
+      const { error: deleteError } = await supabase
         .from('turnos')
         .delete()
         .not('dentalink_id', 'is', null)
         .gte('fecha', fechaDesde)
         .lte('fecha', fechaHasta)
 
+      if (deleteError) {
+        console.error('Turnos delete error:', deleteError.message)
+        throw new Error(`Error borrando turnos: ${deleteError.message}`)
+      }
+
       for (let i = 0; i < turnos.length; i += 500) {
         const batch = turnos.slice(i, i + 500)
-        const { error } = await supabase.from('turnos').insert(batch)
+        const { error } = await supabase.from('turnos').upsert(batch, { onConflict: 'dentalink_id' })
         if (error) console.error('Turnos insert error:', error.message)
         else turnosInserted += batch.length
       }

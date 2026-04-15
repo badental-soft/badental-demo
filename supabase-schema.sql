@@ -78,8 +78,10 @@ CREATE TABLE turnos (
   profesional TEXT,
   estado estado_turno DEFAULT 'agendado',
   origen origen_turno DEFAULT 'whatsapp',
+  dentalink_id INTEGER,
   created_at TIMESTAMPTZ DEFAULT now()
 );
+CREATE UNIQUE INDEX turnos_dentalink_id_unique ON turnos (dentalink_id) WHERE dentalink_id IS NOT NULL;
 
 -- 7. TAREAS
 CREATE TABLE tareas (
