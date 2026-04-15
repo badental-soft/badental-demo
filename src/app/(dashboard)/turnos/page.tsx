@@ -106,8 +106,9 @@ export default function TurnosPage() {
 function TurnosAnalytics({ syncKey }: { syncKey: number }) {
   const supabase = createClient()
   const [stats, setStats] = useState<{
-    mesActual: { total: number; atendidos: number; noShows: number; cancelados: number; tasaShow: number }
-    mesAnterior: { total: number; atendidos: number; tasaShow: number }
+    turnosDados: { mesActual: number; mesAnterior: number }
+    mesActual: { atendidos: number; noShows: number; cancelados: number; tasaShow: number }
+    mesAnterior: { tasaShow: number }
     promedioDiario: number
     semana: Array<{ dia: string; label: string; total: number; atendidos: number }>
   } | null>(null)
@@ -139,10 +140,12 @@ function TurnosAnalytics({ syncKey }: { syncKey: number }) {
       const semanaStart = dias7[0]
       const semanaEnd = dias7[6]
 
-      const [resMes, resPrev, resSemana] = await Promise.all([
+      const [resMes, resPrev, resSemana, resDadosMes, resDadosPrev] = await Promise.all([
         supabase.from('turnos').select('estado').gte('fecha', mesStart).lte('fecha', mesEnd),
         supabase.from('turnos').select('estado').gte('fecha', prevStart).lte('fecha', prevEnd),
         supabase.from('turnos').select('fecha, estado').gte('fecha', semanaStart).lte('fecha', semanaEnd),
+        supabase.from('pacientes_nuevos').select('id', { count: 'exact', head: true }).gte('fecha_afiliacion', mesStart).lte('fecha_afiliacion', mesEnd),
+        supabase.from('pacientes_nuevos').select('id', { count: 'exact', head: true }).gte('fecha_afiliacion', prevStart).lte('fecha_afiliacion', prevEnd),
       ])
 
       // Check for query errors
@@ -154,8 +157,11 @@ function TurnosAnalytics({ syncKey }: { syncKey: number }) {
       const turnosPrev = (resPrev.data || []) as unknown as { estado: string }[]
       const turnosSemana = (resSemana.data || []) as unknown as { fecha: string; estado: string }[]
 
+      // Turnos dados (pacientes nuevos)
+      const dadosMesActual = resDadosMes.count || 0
+      const dadosMesAnterior = resDadosPrev.count || 0
+
       // Current month stats
-      const mesTotal = turnosMes.length
       const mesAtendidos = turnosMes.filter(t => t.estado === 'atendido').length
       const mesNoShows = turnosMes.filter(t => t.estado === 'no_asistio').length
       const mesCancelados = turnosMes.filter(t => t.estado === 'cancelado').length
@@ -164,10 +170,9 @@ function TurnosAnalytics({ syncKey }: { syncKey: number }) {
 
       // Days elapsed in month (up to today)
       const diaHoy = parseInt(hoy.split('-')[2])
-      const promedioDiario = diaHoy > 0 ? Math.round(mesTotal / diaHoy) : 0
+      const promedioDiario = diaHoy > 0 ? Math.round(dadosMesActual / diaHoy) : 0
 
       // Previous month stats
-      const prevTotal = turnosPrev.length
       const prevAtendidos = turnosPrev.filter(t => t.estado === 'atendido').length
       const prevNoShows = turnosPrev.filter(t => t.estado === 'no_asistio').length
       const prevEfectivos = prevAtendidos + prevNoShows
@@ -186,8 +191,9 @@ function TurnosAnalytics({ syncKey }: { syncKey: number }) {
       })
 
       setStats({
-        mesActual: { total: mesTotal, atendidos: mesAtendidos, noShows: mesNoShows, cancelados: mesCancelados, tasaShow: mesTasaShow },
-        mesAnterior: { total: prevTotal, atendidos: prevAtendidos, tasaShow: prevTasaShow },
+        turnosDados: { mesActual: dadosMesActual, mesAnterior: dadosMesAnterior },
+        mesActual: { atendidos: mesAtendidos, noShows: mesNoShows, cancelados: mesCancelados, tasaShow: mesTasaShow },
+        mesAnterior: { tasaShow: prevTasaShow },
         promedioDiario,
         semana,
       })
@@ -201,8 +207,8 @@ function TurnosAnalytics({ syncKey }: { syncKey: number }) {
 
   if (!stats) return null
 
-  const pctChange = stats.mesAnterior.total > 0
-    ? Math.round(((stats.mesActual.total - stats.mesAnterior.total) / stats.mesAnterior.total) * 100)
+  const pctChange = stats.turnosDados.mesAnterior > 0
+    ? Math.round(((stats.turnosDados.mesActual - stats.turnosDados.mesAnterior) / stats.turnosDados.mesAnterior) * 100)
     : null
 
   const tasaDiff = stats.mesActual.tasaShow - stats.mesAnterior.tasaShow
@@ -213,14 +219,14 @@ function TurnosAnalytics({ syncKey }: { syncKey: number }) {
     <div className="mb-6">
       {/* KPIs row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-        {/* Total mes */}
+        {/* Turnos dados mes */}
         <div className="bg-surface rounded-xl border border-border p-4">
           <div className="flex items-center gap-2 mb-1">
-            <CalendarDays size={16} className="text-text-muted" />
-            <span className="text-xs font-medium text-text-muted uppercase tracking-wide">Total {mesLabel}</span>
+            <CalendarPlus size={16} className="text-text-muted" />
+            <span className="text-xs font-medium text-text-muted uppercase tracking-wide">Turnos dados {mesLabel}</span>
           </div>
           <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-semibold text-text-primary">{stats.mesActual.total}</span>
+            <span className="text-2xl font-semibold text-text-primary">{stats.turnosDados.mesActual}</span>
             {pctChange !== null && (
               <span className={`inline-flex items-center text-xs font-medium ${pctChange >= 0 ? 'text-green-primary' : 'text-red'}`}>
                 {pctChange >= 0 ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
@@ -228,7 +234,7 @@ function TurnosAnalytics({ syncKey }: { syncKey: number }) {
               </span>
             )}
           </div>
-          <p className="text-xs text-text-muted mt-0.5">Mes anterior: {stats.mesAnterior.total}</p>
+          <p className="text-xs text-text-muted mt-0.5">Mes anterior: {stats.turnosDados.mesAnterior}</p>
         </div>
 
         {/* Promedio diario */}
@@ -238,7 +244,7 @@ function TurnosAnalytics({ syncKey }: { syncKey: number }) {
             <span className="text-xs font-medium text-text-muted uppercase tracking-wide">Promedio/día</span>
           </div>
           <span className="text-2xl font-semibold text-text-primary">{stats.promedioDiario}</span>
-          <p className="text-xs text-text-muted mt-0.5">turnos por día este mes</p>
+          <p className="text-xs text-text-muted mt-0.5">turnos dados por día</p>
         </div>
 
         {/* Tasa show */}
@@ -269,7 +275,7 @@ function TurnosAnalytics({ syncKey }: { syncKey: number }) {
           </div>
           <span className="text-2xl font-semibold text-amber">{stats.mesActual.cancelados}</span>
           <p className="text-xs text-text-muted mt-0.5">
-            {stats.mesActual.total > 0 ? Math.round((stats.mesActual.cancelados / stats.mesActual.total) * 100) : 0}% del total
+            {stats.turnosDados.mesActual > 0 ? Math.round((stats.mesActual.cancelados / stats.turnosDados.mesActual) * 100) : 0}% del total
           </p>
         </div>
       </div>
