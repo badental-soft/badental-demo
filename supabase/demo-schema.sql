@@ -306,6 +306,28 @@ CREATE TABLE IF NOT EXISTS pacientes_nuevos (
 
 
 -- =====================
+-- 13b. POR COBRAR (tratamientos con deuda activa — feed del tab "Por Cobrar")
+-- =====================
+CREATE TABLE IF NOT EXISTS por_cobrar (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  id_tratamiento INTEGER,
+  id_paciente INTEGER,
+  nombre_paciente TEXT NOT NULL,
+  nombre_tratamiento TEXT NOT NULL,
+  id_sucursal INTEGER,
+  nombre_sucursal TEXT,
+  sede_id UUID REFERENCES sedes(id),
+  fecha_vencimiento DATE,
+  monto DECIMAL(12,2) NOT NULL DEFAULT 0,
+  pagado DECIMAL(12,2) NOT NULL DEFAULT 0,
+  saldo DECIMAL(12,2) NOT NULL DEFAULT 0,
+  numero_cuota INTEGER,
+  total_cuotas INTEGER,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+
+-- =====================
 -- 14. LABORATORIO
 -- =====================
 CREATE TABLE IF NOT EXISTS laboratorio_casos (
@@ -406,6 +428,7 @@ ALTER TABLE stock_movimientos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tarea_plantillas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tarea_completadas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pacientes_nuevos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE por_cobrar ENABLE ROW LEVEL SECURITY;
 ALTER TABLE laboratorio_casos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE laboratorio_historial ENABLE ROW LEVEL SECURITY;
 
@@ -499,6 +522,10 @@ CREATE POLICY "tarea_completadas_own_all" ON tarea_completadas FOR ALL TO authen
 -- PACIENTES NUEVOS
 CREATE POLICY "pacientes_nuevos_read" ON pacientes_nuevos FOR SELECT TO authenticated USING (true);
 CREATE POLICY "pacientes_nuevos_admin_write" ON pacientes_nuevos FOR ALL TO authenticated USING (get_user_role() = 'admin');
+
+-- POR COBRAR
+CREATE POLICY "por_cobrar_read" ON por_cobrar FOR SELECT TO authenticated USING (true);
+CREATE POLICY "por_cobrar_admin_write" ON por_cobrar FOR ALL TO authenticated USING (get_user_role() = 'admin');
 
 -- LABORATORIO
 CREATE POLICY "laboratorio_casos_read" ON laboratorio_casos FOR SELECT TO authenticated USING (true);

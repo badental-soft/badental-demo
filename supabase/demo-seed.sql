@@ -96,6 +96,7 @@ BEGIN
   DELETE FROM empleados_config;
   DELETE FROM employees;
   DELETE FROM pacientes_nuevos;
+  DELETE FROM por_cobrar;
   DELETE FROM tarea_plantillas;
 
   INSERT INTO tarea_plantillas (titulo, categoria, rol, orden, activa) VALUES
@@ -186,26 +187,31 @@ BEGIN
     (cof_id,     sede_centro, 'salida',   6, 'Uso',            CURRENT_DATE - INTERVAL '5 days',  admin_id);
 
   -- =========================================
-  -- 5. TURNOS — 80 turnos distribuidos en ±14 días
+  -- 5. TURNOS — ~350 turnos distribuidos en ±14 días (~12 por día)
   -- =========================================
-  FOR i IN 0..79 LOOP
+  FOR i IN 0..349 LOOP
     d := CURRENT_DATE + ((i % 29) - 14);  -- desde hace 14 días hasta +14
     INSERT INTO turnos (fecha, hora, sede_id, paciente, profesional, estado, origen)
     VALUES (
       d,
-      (TIME '09:00' + ((i % 9) || ' hours')::INTERVAL + ((i % 2) * 30 || ' minutes')::INTERVAL),
+      (TIME '09:00' + (((i / 29) % 10) || ' hours')::INTERVAL + ((i % 2) * 30 || ' minutes')::INTERVAL),
       CASE WHEN i % 2 = 0 THEN sede_centro ELSE sede_norte END,
       (ARRAY[
         'Martínez, Laura', 'González, Pablo', 'Ramírez, Sofía', 'López, Carlos',
         'Fernández, Ana', 'Rodríguez, Diego', 'Sánchez, María', 'Pérez, Juan',
         'Castro, Lucía', 'Torres, Miguel', 'Flores, Carolina', 'Ruiz, Andrés',
         'Álvarez, Camila', 'Morales, Tomás', 'Ortiz, Valentina', 'Silva, Federico',
-        'Romero, Paula', 'Vargas, Sebastián', 'Giménez, Martina', 'Herrera, Lucas'
-      ])[(i % 20) + 1],
+        'Romero, Paula', 'Vargas, Sebastián', 'Giménez, Martina', 'Herrera, Lucas',
+        'Acosta, Julieta', 'Domínguez, Nicolás', 'Núñez, Florencia', 'Molina, Esteban',
+        'Medina, Brenda', 'Paz, Rodrigo', 'Cabrera, Agustina', 'Luna, Matías',
+        'Sosa, Gabriela', 'Figueroa, Emilio', 'Juárez, Renata', 'Villalba, Ignacio',
+        'Ayala, Micaela', 'Ponce, Ezequiel', 'Ríos, Antonella', 'Mansilla, Bruno',
+        'Navarro, Carla', 'Ledesma, Franco', 'Peralta, Daniela', 'Farías, Joaquín'
+      ])[(i % 40) + 1],
       (ARRAY[
         'Dra. Benítez', 'Dr. Martínez', 'Dra. Suárez', 'Dr. Ojeda',
-        'Dra. Ledesma', 'Dr. Quiroga'
-      ])[(i % 6) + 1],
+        'Dra. Ledesma', 'Dr. Quiroga', 'Dra. Romero', 'Dr. Paredes'
+      ])[(i % 8) + 1],
       (CASE
          WHEN d < CURRENT_DATE AND i % 10 < 7 THEN 'atendido'
          WHEN d < CURRENT_DATE AND i % 10 = 7 THEN 'no_asistio'
@@ -218,9 +224,97 @@ BEGIN
   END LOOP;
 
   -- =========================================
-  -- 6. COBRANZAS — 120 cobranzas en últimos 30 días
+  -- 5b. PACIENTES NUEVOS — ~150 altas en últimos 30 días (~5 por día)
+  --     feed del tab "Turnos Dados"
   -- =========================================
-  FOR i IN 0..119 LOOP
+  FOR i IN 0..149 LOOP
+    d := CURRENT_DATE - ((i % 30) || ' days')::INTERVAL;
+    INSERT INTO pacientes_nuevos (
+      id_dentalink, nombre, fecha_afiliacion,
+      primera_cita_fecha, primera_cita_hora, primera_cita_profesional,
+      primera_cita_sede, primera_cita_id_sucursal, origen
+    ) VALUES (
+      100000 + i,
+      (ARRAY[
+        'García, Melina', 'Fernández, Joaquín', 'Pérez, Valeria', 'Luna, Tobías',
+        'Ruiz, Camila', 'Sosa, Benjamín', 'Díaz, Agustina', 'Álvarez, Thiago',
+        'Romero, Francisca', 'Morales, Bautista', 'Ortiz, Mía', 'Silva, Santiago',
+        'Castro, Emma', 'Torres, Lautaro', 'Flores, Isabella', 'Giménez, Noah',
+        'Herrera, Olivia', 'Vargas, León', 'Cabrera, Zoe', 'Molina, Felipe',
+        'Medina, Bianca', 'Paz, Valentino', 'Ayala, Catalina', 'Ponce, Vicente',
+        'Ríos, Amanda', 'Ledesma, Simón', 'Peralta, Celeste', 'Farías, Dylan',
+        'Navarro, Antonia', 'Juárez, Ciro'
+      ])[(i % 30) + 1],
+      d,
+      d + ((1 + (i % 5)) || ' days')::INTERVAL,
+      LPAD(((9 + (i % 8)))::TEXT, 2, '0') || ':' || (CASE WHEN i % 2 = 0 THEN '00' ELSE '30' END),
+      (ARRAY[
+        'Dra. Benítez', 'Dr. Martínez', 'Dra. Suárez', 'Dr. Ojeda',
+        'Dra. Ledesma', 'Dr. Quiroga'
+      ])[(i % 6) + 1],
+      CASE WHEN i % 2 = 0 THEN 'Clínica Centro' ELSE 'Clínica Norte' END,
+      CASE WHEN i % 2 = 0 THEN 1 ELSE 2 END,
+      (ARRAY['Instagram', 'WhatsApp', 'Google', 'Referido', 'Web', 'Facebook', 'Otro'])[(i % 7) + 1]
+    );
+  END LOOP;
+
+  -- =========================================
+  -- 5c. POR COBRAR — 25 tratamientos con saldo pendiente
+  --     (distinto de 'deudas'; feed del tab Por Cobrar)
+  -- =========================================
+  FOR i IN 0..24 LOOP
+    INSERT INTO por_cobrar (
+      id_tratamiento, id_paciente, nombre_paciente, nombre_tratamiento,
+      id_sucursal, nombre_sucursal, sede_id,
+      fecha_vencimiento, monto, pagado, saldo,
+      numero_cuota, total_cuotas
+    ) VALUES (
+      500000 + i,
+      700000 + i,
+      (ARRAY[
+        'Martínez, Laura', 'González, Pablo', 'Ramírez, Sofía', 'López, Carlos',
+        'Fernández, Ana', 'Rodríguez, Diego', 'Sánchez, María', 'Pérez, Juan',
+        'Castro, Lucía', 'Torres, Miguel', 'Flores, Carolina', 'Ruiz, Andrés',
+        'Álvarez, Camila', 'Morales, Tomás', 'Ortiz, Valentina', 'Silva, Federico',
+        'Romero, Paula', 'Vargas, Sebastián', 'Giménez, Martina', 'Herrera, Lucas',
+        'Acosta, Julieta', 'Domínguez, Nicolás', 'Núñez, Florencia', 'Molina, Esteban',
+        'Medina, Brenda'
+      ])[(i % 25) + 1],
+      (ARRAY[
+        'Ortodoncia invisible — cuota 4/12',
+        'Implante óseo integrado',
+        'Blanqueamiento láser',
+        'Endodoncia molar',
+        'Corona de porcelana',
+        'Prótesis removible superior',
+        'Cirugía de cordales',
+        '2 implantes',
+        'Tratamiento de conducto',
+        'Prótesis fija 3 piezas',
+        'Ortodoncia (cuota 2/12)',
+        'Implante + corona'
+      ])[(i % 12) + 1],
+      CASE WHEN i % 2 = 0 THEN 1 ELSE 2 END,
+      CASE WHEN i % 2 = 0 THEN 'Clínica Centro' ELSE 'Clínica Norte' END,
+      CASE WHEN i % 2 = 0 THEN sede_centro ELSE sede_norte END,
+      (CASE
+         WHEN i % 5 = 0 THEN NULL
+         WHEN i % 5 = 1 THEN CURRENT_DATE - ((i % 7) || ' days')::INTERVAL
+         WHEN i % 5 = 2 THEN CURRENT_DATE
+         ELSE CURRENT_DATE + (((i % 25) + 1) || ' days')::INTERVAL
+       END)::DATE,
+      (ARRAY[480000, 620000, 85000, 185000, 215000, 320000, 260000, 720000, 140000, 540000, 95000, 380000])[(i % 12) + 1],
+      (ARRAY[120000, 310000, 0, 60000, 90000, 160000, 100000, 240000, 40000, 220000, 25000, 190000])[(i % 12) + 1],
+      (ARRAY[360000, 310000, 85000, 125000, 125000, 160000, 160000, 480000, 100000, 320000, 70000, 190000])[(i % 12) + 1],
+      CASE WHEN i % 3 = 0 THEN (i % 12) + 1 ELSE NULL END,
+      CASE WHEN i % 3 = 0 THEN 12 ELSE NULL END
+    );
+  END LOOP;
+
+  -- =========================================
+  -- 6. COBRANZAS — 250 cobranzas en últimos 30 días (~8 por día)
+  -- =========================================
+  FOR i IN 0..249 LOOP
     d := CURRENT_DATE - ((i % 30) || ' days')::INTERVAL;
     INSERT INTO cobranzas (fecha, sede_id, sede_ids, user_id, paciente, tratamiento, tipo_pago, monto, es_cuota, moneda)
     VALUES (
